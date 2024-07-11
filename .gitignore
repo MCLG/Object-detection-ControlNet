@@ -5,6 +5,10 @@ ControlNetHome/ControlNet/*
 ControlNetHome/models/control_sd15_ini.ckpt
 ControlNetHome/models/v1-5-pruned.ckpt 
 
+__pycache__/
+ControlNetHome/__pycache__/
+STEERER/__pycache__/
+
 STEERER/JHU_mae_54.5_mse_240.6.pth 
 
 # gitignore from STEERER

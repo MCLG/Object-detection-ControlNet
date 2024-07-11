@@ -1,0 +1,10 @@
+name: STEERER_env
+channels: 
+  - pytorch
+  - defaults
+dependencies:
+  - cudatoolkit==11.8.0
+  - yacs>=0.1.5
+  - pip:
+      - dict_recursive_update
+      - mmcv==2.2.0 #-f https://download.openmmlab.com/mmcv/dist/cu118/torch2.3/index.html #https://mmcv.readthedocs.io/en/latest/get_started/installation.html
