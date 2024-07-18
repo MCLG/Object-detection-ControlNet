@@ -19,7 +19,7 @@ from ldm.util import log_txt_as_img, exists, instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 
 # packages i added :
-from ldm.util import default
+from ldm.util import default, rotate_clockwise
 from copy import deepcopy
 try :
     from STEERER.inference import CounterWrapper
@@ -30,6 +30,8 @@ except :
         sys.path.append(steerer_loc)
 import numpy as np
 import matplotlib.pyplot as plt
+import torchvision.transforms as T
+
 # sampler needed to reconstruct images from noise 
 from cldm.ddim_hacked import DDIMSampler
 import os #needed to check path to save imgs during training
@@ -355,9 +357,6 @@ class ControlLDM(LatentDiffusion):
 
 
     ######################################################################################################
-    # TODO: Modify here s.t. the gaussians and the count of each image is also passed
-    # ensuite recupere les deux dans p_losses() et change le Lcount.
-    # entraine le model  entier et SEULEMENT APRES, passe gaussian key dans get_count()
 
     #modified function
     @torch.no_grad()
@@ -576,7 +575,7 @@ class ControlLDM(LatentDiffusion):
             N = model_out.shape[0]
             ddim_steps = 50     # SET TO PAPER VALUES
             shape = (4,64,64)
-
+            
             samples, intermediates = self.sampler.sample(ddim_steps, N,
                                                   shape, cond400, verbose = False,eta =0.0,
                                                   x_T = model_out)
@@ -584,35 +583,7 @@ class ControlLDM(LatentDiffusion):
             reconstructed_x = (self.decode_first_stage(samples)+1)/2
 
             
-            if self.global_step % 50 == 0:
-                print('\n'
-                      f'[SAVING IMGS] at epoch={self.global_step}/path="ControlNet/ControlNet/training_imgs/{self.current_epoch}-{self.global_step}" \n ')
-                
-                temp_plt = torch.tensor_split(reconstructed_x,reconstructed_x.shape[0])
-                temp_map = torch.tensor_split(cond400['c_concat'][0],cond400['c_concat'][0].shape[0])
-                
-                
-                fig1, axs1 = plt.subplots(2, 2, figsize=(8, 8))
-                axs1 = axs1.flatten()
-                
-                fig2, axs2 = plt.subplots(2, 2, figsize=(8, 8))
-                axs2 = axs2.flatten()
-
-                for k in range(min(4,len(temp_plt))):
-                    axs1[k].imshow(temp_plt[k].squeeze(0).permute(1, 2, 0).to('cpu'))
-                    axs1[k].set_title(f'True count: {count[k].item()}')  # Add caption as title
-                    axs1[k].axis('off')  # Hide axe
-
-                    axs2[k].imshow(temp_map[k].squeeze(0).permute(1, 2, 0).to('cpu'))
-                    axs2[k].set_title(f'True count: {count[k].item()}')  # Add caption as title
-                    axs2[k].axis('off')  # Hide axe
-                    
-                plt.tight_layout()
-
-                save_dir = f'ControlNet/ControlNet/training_imgs/{self.current_epoch}-{self.global_step}'
-                os.makedirs(save_dir, exist_ok=True)
-                fig1.savefig(os.path.join(save_dir, 'reconstructed.png'))
-                fig2.savefig(os.path.join(save_dir, 'map.png'))
+            
                
             if self.counter.device != self.device :
                 print(f'[WARNING] model.counter and model do not share same device ! \n'
@@ -620,6 +591,10 @@ class ControlLDM(LatentDiffusion):
                 reconstructed_x = reconstructed_x.to(self.counter.device)
 
             count_batch = self.counter.get_count(reconstructed_x)
+            
+            # Intermediate training images are saved
+            if self.global_step % 50 == 0 :#and self.global_step != 0:
+                self.train_plot(reconstructed_x, cond400, count, count_batch, t=t_400_1000)
 
         # Mean  Average Error for count loss
         if self.counter.device != self.device:
@@ -647,3 +622,37 @@ class ControlLDM(LatentDiffusion):
 
         return loss, loss_dict
     
+    def train_plot(self, reconstructed_x, cond400, count,count_batch, t) :
+
+        print('\n'
+                f'[SAVING IMGS] at step={self.global_step} - path="./saves/training_imgs/{self.current_epoch}-{self.global_step}" \n ')
+            
+        temp_plt = torch.tensor_split(reconstructed_x,reconstructed_x.shape[0])
+        temp_map = torch.tensor_split(cond400['c_concat'][0],cond400['c_concat'][0].shape[0])
+        
+        
+        fig1, axs1 = plt.subplots(2, 2, figsize=(8, 8))
+        axs1 = axs1.flatten()
+        
+        fig2, axs2 = plt.subplots(2, 2, figsize=(8, 8))
+        axs2 = axs2.flatten()
+
+        lin_clipper = lambda x : (x+1)/2
+        
+        for k in range(min(4,len(temp_plt))):
+        
+            axs1[k].imshow(rotate_clockwise(torch.clamp(lin_clipper(temp_plt[k].squeeze(0)), min=0, max=1)).permute(1, 2, 0).to('cpu'))
+            axs1[k].set_title(f'gt: {count[k].item()}/count: {count_batch[k]:.1f}/ t:{t[k]}')
+            axs1[k].axis('off')
+
+            axs2[k].imshow(rotate_clockwise(torch.clamp(lin_clipper(temp_map[k].squeeze(0)),min=0, max=1)).permute(1, 2, 0).to('cpu'))
+            axs2[k].set_title(f'gt: {count[k].item()}/count: {count_batch[k]:.1f}/ t:{t[k]}')
+            axs2[k].axis('off')
+            
+        plt.tight_layout()
+
+        save_dir = f'./saves/training_imgs/{self.current_epoch}-{self.global_step}'
+        os.makedirs(save_dir, exist_ok=True)
+        fig1.savefig(os.path.join(save_dir, 'reconstructed.png'))
+        fig2.savefig(os.path.join(save_dir, 'map.png'))
+

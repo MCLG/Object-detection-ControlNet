@@ -27,6 +27,7 @@ from ldm.models.autoencoder import IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
 
+
 __conditioning_keys__ = {'concat': 'c_concat',
                          'crossattn': 'c_crossattn',
                          'adm': 'y'}
@@ -354,9 +355,9 @@ class DDPM(pl.LightningModule):
 
     def q_sample(self, x_start, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
-        #print('prior to q_sampling, x_start is of shape',x_start.shape,' while the output is of shape ',
-              #(extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
-               # extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise).shape)
+        print('prior to q_sampling, x_start is of shape',x_start.shape,' while the output is of shape ',
+              (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
+                extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise).shape)
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
@@ -413,13 +414,11 @@ class DDPM(pl.LightningModule):
         return loss, loss_dict
 
     def forward(self, x, *args, **kwargs):
-        # b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
-        # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
         return self.p_losses(x, t, *args, **kwargs)
 
     def get_input(self, batch, k):
-        #print('ENTERED DDPM.get_input()')
+        print('ENTERED DDPM.get_input()')
         
         x = batch[k]
 
@@ -458,10 +457,6 @@ class DDPM(pl.LightningModule):
             lr = self.optimizers().param_groups[0]['lr']
             self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
 
-        # Cheeckpoint here
-        if self.global_step % 130 == 0:
-            self.trainer.save_checkpoint(filepath = f'ControlNet/checkpoints/crowdnet_dict-epoch-{self.current_epoch}.ckpt',weights_only= True)
-            print(f'CheckPoint saved at epoch/itr: {self.current_epoch}/{self.global_step} \n')
         return loss
 
     @torch.no_grad()
@@ -780,8 +775,6 @@ class LatentDiffusion(DDPM):
                   cond_key=None, return_original_cond=False, bs=None, return_x=False):
         
 
-
-
         x = super().get_input(batch, k)
         if bs is not None:
             x = x[:bs]
@@ -915,9 +908,11 @@ class LatentDiffusion(DDPM):
         noise = default(noise, lambda: torch.randn_like(x_start))
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
         model_output = self.apply_model(x_noisy, t, cond)
-        
+
+
         # In scope temp copy for ControlLDM p_loss()
         output_copy = model_output.detach()
+
 
         loss_dict = {}
         prefix = 'train' if self.training else 'val'

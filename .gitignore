@@ -1,7 +1,7 @@
-ControlNet/*
+imgs_dump/*
 ControlNet.code-workspace
 xcontrol_backup.yaml
-ControlNetHome/ControlNet/*
+saves/*
 ControlNetHome/models/control_sd15_ini.ckpt
 ControlNetHome/models/v1-5-pruned.ckpt 
 
@@ -10,6 +10,8 @@ ControlNetHome/__pycache__/
 STEERER/__pycache__/
 
 STEERER/JHU_mae_54.5_mse_240.6.pth 
+
+old_conda_configs/*
 
 # gitignore from STEERER
 # created by virtualenv automatically

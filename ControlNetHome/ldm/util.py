@@ -7,6 +7,17 @@ import numpy as np
 from inspect import isfunction
 from PIL import Image, ImageDraw, ImageFont
 
+# added to rotate save imgs during training 
+def rotate_clockwise(tensor : torch.Tensor) -> torch.Tensor :
+    assert len(tensor.shape) == 3, 'rotate clockwise defined for tensor [3,W,H] or batch [B,3,W,H]'
+    assert tensor.shape[0] == 3, 'is not a RGB tensor'
+
+    r = tensor[0].t().flip(1)
+    g = tensor[1].t().flip(1)
+    b = tensor[2].t().flip(1)
+    rg = torch.stack((r,g))
+
+    return torch.cat((rg,b.unsqueeze(0)))
 
 def log_txt_as_img(wh, xc, size=10):
     # wh a tuple of (width, height)

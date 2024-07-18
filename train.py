@@ -11,6 +11,10 @@ steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
 if steerer_loc not in sys.path :
     sys.path.append(steerer_loc)
 
+control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
+if control_loc not in sys.path :
+    sys.path.append(control_loc)
+
 from data_processor import CrowdDataSetv2, MapConfig
 import torch 
 from dataclasses import dataclass
@@ -19,8 +23,10 @@ import sys
 import pytorch_lightning as pl
 
 from torch.utils.data import DataLoader
-from cldm.logger import ImageLogger
-from cldm.model import create_model, load_state_dict
+from ControlNetHome.cldm.logger import ImageLogger
+from ControlNetHome.cldm.model import create_model, load_state_dict
+
+from inference import ckpt_search
 
 # REQUIREMENTS AND LATEST PACKAGES FILE CHANGES
 '''
@@ -69,7 +75,13 @@ SOLVED:
 
 
 # Configs
-resume_path = './ControlNet/checkpoints/crowdnet_dict-epoch-28.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
+try:
+    resume_path = ckpt_search()
+except : 
+    resume_path = './saves/checkpoints/crowdnet_dict-epoch-60.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
+
+
+
 batch_size = 16
 logger_freq = 300
 learning_rate = 2e-5#1e-5   SET TO PAPER VALUES
@@ -78,7 +90,7 @@ only_mid_control = False
 AVAILABLE_GPU = 2
 #%%
 # First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
-model = create_model('./models/cldm_v15.yaml',location=AVAILABLE_GPU)
+model = create_model('./ControlNetHome/models/cldm_v15.yaml',location=AVAILABLE_GPU)
 #print('OUTSIDE created modeöl. prior to loading dict location is ',model.device)
 interm = load_state_dict(resume_path, location=AVAILABLE_GPU)
 
@@ -109,32 +121,22 @@ class MapConfig :
 config = MapConfig
 
 train_set = CrowdDataSetv2(config)
-train_loader = DataLoader(train_set, num_workers=0, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(train_set, num_workers=16, batch_size=batch_size, shuffle=True)
 
 config.load_dir = 'val'
 val_set = CrowdDataSetv2(config)
-val_loader = DataLoader(val_set, num_workers=0, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_set, num_workers=16, batch_size=batch_size, shuffle=False)
 
 logger = ImageLogger(batch_frequency=logger_freq)
 trainer = pl.Trainer(devices=[AVAILABLE_GPU],accelerator="gpu", 
                      precision=32, 
                      profiler='simple',
                      limit_train_batches=200,
-                     limit_val_batches=50)
+                     limit_val_batches=50,
+                     )
 #%%
 
-# Train!
+# Train! 
 trainer.fit(model, train_dataloaders=train_loader,val_dataloaders=val_loader)
- # %%
-#imports
-from cldm.ddim_hacked import DDIMSampler
-import matplotlib.pyplot as plt
-
-#SAMPLING HERE 
-
-N = 1
-ddim_steps = 50
-ddim_sampler = DDIMSampler(model)
-
 
 # %%
