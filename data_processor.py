@@ -1,4 +1,4 @@
-#%%
+
 from dataclasses import dataclass
 from torch.utils.data import DataLoader, Dataset
 from typing import Tuple
@@ -11,8 +11,7 @@ import sys
 import os
 import csv
 import numpy as np
-#import pandas as pd
-#import matplotlib.pyplot as plt
+
 import argparse as arg
 from tqdm import tqdm
 
@@ -199,7 +198,7 @@ def process(img : torch.Tensor,
         gaussian = T.RandomHorizontalFlip(1)(gaussian)
     img = T.Normalize([0.5],[0.5])(img)
     label = T.Normalize([0.5],[0.5])(label)
-    #gaussian = T.Normalize([0.5],[0.5])(gaussian) <-------------------------------------- IDK IF INCLUDE HERE ???????
+    
     return img,label,gaussian
 
 def load_to(config : MapConfig,
@@ -403,23 +402,6 @@ def write_csv_file(config : MapConfig,
     print(f'Done ! Added {len(labels)} prompts to file {config.save_dir} !')
     if return_id_list :
         return list(labels.keys())
-
-#%%
-'''
-
-@dataclass
-class MapConfig :
-    include_box_size : bool = False
-    scale_gaussian : bool = False   #for type = 'RGB' this will return a map that seems black but still has the gt info
-    save_as : str = 'Tensor'  #or Tensor
-    type : str = 'RGB'    #'RGB' or 'HeatMap' -> if Tensor then has dim 1,512,512 instead of 3,512,512
-    save_dir : str = "/net/vid-raxus/deeplearning/users/luk02485/control_net/"  #location to save processed maps
-    save_for : str = 'train' # or 'val' or 'test'
-    load_dir : str = "train"
-    CSV_include_count : bool = True
-
-ROOT_DIR = "/net/vid-raxus/deeplearning/datasets/jhu/jhu_crowd_v2.0/"
-'''
 
 if __name__ == "__main__":
 

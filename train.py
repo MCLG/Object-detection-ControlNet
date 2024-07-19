@@ -79,8 +79,8 @@ try:
     resume_path = ckpt_search()
 except : 
     resume_path = './saves/checkpoints/crowdnet_dict-epoch-60.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
-
-
+    # 60 + 76 = 136
+#resume_path = './saves/checkpoints/crowdnet_dict-epoch-136_.ckpt'
 
 batch_size = 16
 logger_freq = 300

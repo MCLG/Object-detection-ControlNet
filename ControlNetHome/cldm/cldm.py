@@ -590,7 +590,7 @@ class ControlLDM(LatentDiffusion):
                       f'model:{self.device} - counter:{self.counter.device}')
                 reconstructed_x = reconstructed_x.to(self.counter.device)
 
-            count_batch = self.counter.get_count(reconstructed_x)
+            count_batch = self.counter.get_count(reconstructed_x)[0]
             
             # Intermediate training images are saved
             if self.global_step % 50 == 0 :#and self.global_step != 0:

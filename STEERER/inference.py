@@ -130,5 +130,5 @@ class CounterWrapper(Baseline_Counter):
         pre_den = result['pre_den']['1']
         pred_cnt = pre_den.sum().item()
 
-        return pred_cnt
+        return pred_cnt,pre_den
 

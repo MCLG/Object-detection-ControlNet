@@ -1,3 +1,4 @@
+#%%
 import torch
 import _init_paths
 from lib.config import config
@@ -7,6 +8,7 @@ from lib.utils.modelsummary import get_model_summary
 
 from lib.models.seg_hrnet_sum import  get_seg_model
 from lib.models.vit import  get_seg_model
+#%%
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Crowd Counting network')
 
@@ -34,15 +36,15 @@ def parse_args():
 # )
 # print(get_model_summary(model.to(0), dump_input.to(0)))
 import os
-from lib.models.backbones import HRTBackbone_cc, CCFBackbone, \
-    MocBackbone, HRNetBackbone, MocHRBackbone, HRTBackbone,MocCatBackbone,\
-    MAEvitBackbone, VGGBackbone
+from lib.models.backbones import MocBackbone, MocHRBackbone ,MocCatBackbone,\
+    MAEvitBackbone, VGGBackbone # HRTBackbone_cc, CCFBackbone, HRNetBackbone, HRTBackbone\
 
 from lib.utils.modelsummary import get_model_summary
-# from lib.utils.flop_count import flop_count
+#from lib.utils.flop_count import flop_count
 from fvcore.nn.flop_count import flop_count
 from fvcore.nn.parameter_count import parameter_count_table
 from mmcv import  Config
+
 dump_input = torch.rand(
     (1, 3, 768, 768)
 )
@@ -126,3 +128,4 @@ print(flop_count(model.cuda(), (dump_input.cuda(),)))
 # model;
 import pdb
 pdb.set_trace()
+# %%
