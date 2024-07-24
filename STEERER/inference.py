@@ -107,10 +107,13 @@ class CounterWrapper(Baseline_Counter):
 
         if len(img.shape) == 4 and img.shape[0] > 1 :
             batch_count_result = []
+            batch_dens = []
             imgs_batch = torch.tensor_split(img,img.shape[0])
             for k in range(len(imgs_batch)) :
-                batch_count_result.append(self.get_count(imgs_batch[k])) #not passing gaussians yet
-            return torch.tensor(batch_count_result, device = self.device)
+                res = self.get_count(imgs_batch[k])
+                batch_count_result.append(res[0]) #not passing gaussians yet
+                batch_dens.append(res[1])
+            return torch.tensor(batch_count_result, device = self.device), batch_dens
         
         if gaussians is None :
             labels = list()

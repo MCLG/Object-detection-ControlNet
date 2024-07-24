@@ -4,15 +4,13 @@ control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
 if control_loc not in sys.path :
     sys.path.append(control_loc)
 
-from ControlNetHome.share import *
+#from ControlNetHome.share import *
 from data_processor import density_map, MapConfig
 import tempfile
 from ControlNetHome.cldm.model import create_model, load_state_dict
-import cv2
 from ControlNetHome.annotator.util import resize_image
 import numpy as np
 import torch
-import einops
 from ControlNetHome.cldm.ddim_hacked import DDIMSampler
 from PIL import Image
 import torch
@@ -25,6 +23,10 @@ from typing import Tuple, Optional
 import random as rd 
 from ControlNetHome.ldm.util import rotate_clockwise
 import matplotlib.pyplot as plt
+
+from STEERER.inference import CounterWrapper
+from mmcv import Config
+
 steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
 if steerer_loc not in sys.path :
     sys.path.append(steerer_loc)
@@ -53,8 +55,15 @@ class crowd_sampler(pl.LightningModule):
         - a rd gaussian map generator.
         - sample method.
     '''
-    def __init__(self,resume_path = None, device = 2 ):
+    def __init__(self,resume_path = None, device = 2, activate_counter = False ):
         super().__init__()
+
+        if activate_counter :
+            self.counter = CounterWrapper(device= torch.device(2))
+            #config = Config.fromfile('configs/SHHB_final.py')
+            #model = Baseline_Counter(config.network, config.dataset.den_factor, config.train.route_size, device)
+
+
 
         if resume_path is None :
             resume_path = ckpt_search()
@@ -149,7 +158,18 @@ class crowd_sampler(pl.LightningModule):
             return samples, (control +1)/2
         
         return samples
+    
+    def confidence_sample(self, eps : float, control : Optional[torch.Tensor] = None, prompt = '', N=1, ddim_steps=50, return_control = False) -> torch.Tensor:
 
+        assert hasattr(self, 'counter'), 'confidence sampling requires crowd_sampler to be initialized with activate_counter=True. By Default is False.'
+
+        def conf(x : float, y : float ) -> float:
+            
+            assert x >= 0 and y >= 0, 'invalid input passed in confidence_sample.conf() '
+            return max(100-abs(x-y)/x, 0)
+        
+        
+        
 #%%
 if __name__ == "__main__":
     s = crowd_sampler()
@@ -160,20 +180,35 @@ if __name__ == "__main__":
                     prompt='a photo of a crowd of people in a concert, no weather degradation',
                     N=1,
                     return_control=True)
+    # samples look best when rotating before the img, we rotate then again to have them the right way
+    # Issue arised from training on tensors mostly rotated on one side
+    sample_ = T.ToPILImage()(rotate_clockwise(sample[0].squeeze(0).cpu()))
+    map_ = T.ToPILImage()(rotate_clockwise(sample[1].squeeze(0).cpu()))
 
-    sample_ = sample[0].squeeze(0).cpu()
-    map_ = sample[1].squeeze(0).cpu()
+    resolution = (2400,2400)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    resize_transform = T.Resize(resolution, interpolation=T.InterpolationMode.BICUBIC)
+    
+    sample_ = resize_transform(sample_)
+    map_ = resize_transform(map_)
+
+    sample_ = T.ToTensor()(sample_)
+    map_ = T.ToTensor()(map_)
+
+    dpi = 100
+    figsize = (resolution[0] / dpi, resolution[1] / dpi)
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
 
     # Display the map tensor
-    axes[0].imshow(sample_.permute(2, 1, 0))
+    axes[0].imshow(sample_.permute(1,2,0))
     axes[0].axis('off')  # Remove axes
 
     # Display the sample tensor
-    axes[1].imshow(map_.permute(2, 1, 0))
+    axes[1].imshow(map_.permute(1,2,0))
     axes[1].axis('off')  # Remove axes
 
+    fig.savefig(os.path.join('./imgs_dump', 'sample_img.png'))
     plt.show()
 
 #%%
