@@ -25,7 +25,7 @@ from ControlNetHome.ldm.util import rotate_clockwise
 import matplotlib.pyplot as plt
 
 from STEERER.inference import CounterWrapper
-from mmcv import Config
+from mmengine.config.config import Config
 
 steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
 if steerer_loc not in sys.path :
@@ -59,11 +59,10 @@ class crowd_sampler(pl.LightningModule):
         super().__init__()
 
         if activate_counter :
-            self.counter = CounterWrapper(device= torch.device(2))
+            self.counter = CounterWrapper(device= torch.device(2))#.to(torch.device(self.device))
+            #self.counter = self.counter.to(self.device)
             #config = Config.fromfile('configs/SHHB_final.py')
             #model = Baseline_Counter(config.network, config.dataset.den_factor, config.train.route_size, device)
-
-
 
         if resume_path is None :
             resume_path = ckpt_search()
@@ -105,6 +104,10 @@ class crowd_sampler(pl.LightningModule):
         prompt : a text prompt for cross-attention condition
 
         if N does not match control.shape[0], it will duplicate the control for each sample, provided control.shape[0]==1.
+
+        RETURNS
+            torch.Tensor of dim 1,3,512,512 or a list of such tensors.
+            if return_control == True, then will return a tuple of tensor ([1,3,512,512], [1,3,512,512]) or a tuple of two lists of such tensors.
         '''
         assert (control is None or isinstance(control, torch.Tensor)), f'Control must be None or torch.Tensor in {self}'
         
@@ -115,6 +118,9 @@ class crowd_sampler(pl.LightningModule):
             
         if N > 1 :
             samples = []
+            if return_control :
+                control_return = []
+
             if len(control.shape) == 4:
                 if control.shape[0] != N :
                     assert control.shape[0] == 1, f'Ambiguous amount of control tensors ({control.shape[0]}) passed for {N} desired samples.'
@@ -125,7 +131,13 @@ class crowd_sampler(pl.LightningModule):
 
                 control_tuple = torch.tensor_split(control,control.shape[0])
                 for c in control_tuple:
-                    samples.append(self.sample(c,prompt=prompt,N=1,ddim_steps=ddim_steps,return_control=return_control))
+                    sc = self.sample(c,prompt=prompt,N=1,ddim_steps=ddim_steps,return_control=return_control)
+                    try:
+                        samples.append(sc[0])
+                        control_return.append(sc[1])
+                    except:
+                        samples.append(sc)
+
                 return samples 
             
             elif len(control.shape) == 3 :
@@ -159,62 +171,193 @@ class crowd_sampler(pl.LightningModule):
         
         return samples
     
-    def confidence_sample(self, eps : float, control : Optional[torch.Tensor] = None, prompt = '', N=1, ddim_steps=50, return_control = False) -> torch.Tensor:
+    def confidence_sample(self, p : float, control : Optional[torch.Tensor] = None, true_count : Optional[list[int]] = None, prompt = '', N=1, ddim_steps=50) -> torch.Tensor:
 
-        assert hasattr(self, 'counter'), 'confidence sampling requires crowd_sampler to be initialized with activate_counter=True. By Default is False.'
+        assert hasattr(self, 'counter'), 'confidence sampling requires crowd_sampler to be initialized with activate_counter=True. Default is False.'
+        assert p >= 0 and p <= 100 , 'confidence "p" needs to be in range (0,100)'
 
         def conf(x : float, y : float ) -> float:
-            
             assert x >= 0 and y >= 0, 'invalid input passed in confidence_sample.conf() '
-            return max(100-abs(x-y)/x, 0)
+            return max(0, 100 - abs(x-y)/np.floor((x+y)/2)*100)
         
-        
+        output = []
+        den_output = []
+        while N != 0 :
+
+            samples,_ = self.sample(control=control, prompt=prompt,N=N, return_control= True)
+            #samples = samples.to(self.counter.device)
+            if isinstance(samples,list):
+                remove = []
+                for k in range(len(samples)) :
+                    c,den = self.counter.get_count(samples[0])
+                    if true_count is None :
+                        count = control[k].squeeze(0)[0].sum().item()       #only supported if the map is a true gaussian
+                    else : 
+                        count = true_count[k]
+                    print(f'c={c}/count={count}/conf={conf(count,c)}')
+                    if conf(count,c) >= p :    
+                        output.append(samples[k])
+                        den_output.append(den)
+                        remove.append(k)
+                        N -= 1
+                remove = remove.sort(reverse=True)
+                for k in remove :
+                    control.pop(k)
+                    true_count.pop(k)
+
+            else :
+                c,den = self.counter.get_count(samples[0])
+                if true_count is None:
+                    count = control.squeeze(0)[0].sum().item()          #only supported if the map is a true gaussian
+                else : 
+                    count = true_count[0]
+                print(f'c={c}/count={count}/conf={conf(count,c)}')
+                if conf(count, c ) >= p :
+                    output.append(samples)
+                    den_output.append(den)
+                    N -= 1
+                
+        return output,den_output
         
 #%%
-if __name__ == "__main__":
-    s = crowd_sampler()
-    path = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/test/map/0006.pt'
-    map = rotate_clockwise(torch.load(path))
+def main_single() :
 
-    sample = s.sample(control=map.unsqueeze(0),
-                    prompt='a photo of a crowd of people in a concert, no weather degradation',
-                    N=1,
-                    return_control=True)
-    # samples look best when rotating before the img, we rotate then again to have them the right way
-    # Issue arised from training on tensors mostly rotated on one side
-    sample_ = T.ToPILImage()(rotate_clockwise(sample[0].squeeze(0).cpu()))
-    map_ = T.ToPILImage()(rotate_clockwise(sample[1].squeeze(0).cpu()))
+    # Load the model
+    s = crowd_sampler(activate_counter=True)
+    s.counter = s.counter.to(s.device)      # to properly load steerer on the same device
 
-    resolution = (2400,2400)
+    #load map
+    path = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/map/0017.pt'
+    map = torch.load(path) #rotate_clockwise(torch.load(path))
 
-    resize_transform = T.Resize(resolution, interpolation=T.InterpolationMode.BICUBIC)
+    # sample and density maps
+    sample,dens = s.confidence_sample(p = 50, control=map.unsqueeze(0), true_count= [13],
+                    prompt='a photo of a crowd of people running, no weather degradation',
+                    N=1)
     
+    # reshape the samples 
+    resolution = (1536, 2048)
+    sample_ = T.ToPILImage()(sample[0].squeeze(0).cpu())
+    map_ = T.ToPILImage()(map.squeeze(0).cpu())
+    
+    
+    resize_transform = T.Resize(resolution, interpolation=T.InterpolationMode.BICUBIC)
     sample_ = resize_transform(sample_)
     map_ = resize_transform(map_)
-
+    
+    #convert back to tensor
     sample_ = T.ToTensor()(sample_)
     map_ = T.ToTensor()(map_)
+    den = dens[0]
 
+    # plot 
     dpi = 100
     figsize = (resolution[0] / dpi, resolution[1] / dpi)
 
-    fig, axes = plt.subplots(1, 2, figsize=figsize)
-
-    # Display the map tensor
-    axes[0].imshow(sample_.permute(1,2,0))
-    axes[0].axis('off')  # Remove axes
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
 
     # Display the sample tensor
-    axes[1].imshow(map_.permute(1,2,0))
-    axes[1].axis('off')  # Remove axes
+    axes[0,0].imshow(sample_.permute(1,2,0))
+    axes[0,0].axis('off')  # Remove axes
+
+    # Display the map tensor
+    axes[0,1].imshow(map_.permute(1,2,0))
+    axes[0,1].axis('off')  # Remove axes
+
+    # Display the density tensor
+    axes[0,2].imshow(den.squeeze(0).squeeze(0).cpu().numpy())
+    axes[0,2].axis('off')
+
+    # Display the true image tensor
+    true_img = (torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/img/0017.pt')+1)/2
+    _, approx_density = s.counter.get_count(true_img)
+
+    axes[1,0].imshow(resize_transform(true_img).squeeze(0).cpu().permute(1,2,0))
+    axes[1,0].axis('off')
+
+    # Display the true density tensor
+    axes[1,1].imshow(resize_transform(approx_density).squeeze(0).squeeze(0).cpu().numpy())
+    axes[1,1].axis('off')
+
+    axes[1,2].imshow(torch.randn(resolution))
+    axes[1,2].axis('off')
+
 
     fig.savefig(os.path.join('./imgs_dump', 'sample_img.png'))
     plt.show()
 
+def main_plural() :
+    # Load the model
+    s = crowd_sampler(activate_counter=True)
+    s.counter = s.counter.to(s.device)      # to properly load steerer on the same device
+
+    #load map
+    paths = ['/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/map/0017.pt',
+             '/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/map/0018.pt',
+             '/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/map/0019.pt']
+    
+    maps = [torch.load(path).unsqueeze(0) for path in paths]#rotate_clockwise(torch.load(path))
+
+    # sample and density maps
+    sample,dens = s.confidence_sample(p = 50, control=torch.cat(maps), true_count= [13,80,27],
+                    prompt='a photo of a crowd of people in the street, no weather degradation',
+                    N=len(paths))
+    '''
+    # reshape the samples 
+    resolution = (1536, 2048)
+    sample_ = T.ToPILImage()(sample[0].squeeze(0).cpu())
+    map_ = T.ToPILImage()(map.squeeze(0).cpu())
+    
+    
+    resize_transform = T.Resize(resolution, interpolation=T.InterpolationMode.BICUBIC)
+    sample_ = resize_transform(sample_)
+    map_ = resize_transform(map_)
+    
+    #convert back to tensor
+    sample_ = T.ToTensor()(sample_)
+    map_ = T.ToTensor()(map_)
+    den = dens[0]
+
+    # plot 
+    dpi = 100
+    figsize = (resolution[0] / dpi, resolution[1] / dpi)
+
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
+
+    # Display the sample tensor
+    axes[0,0].imshow(sample_.permute(1,2,0))
+    axes[0,0].axis('off')  # Remove axes
+
+    # Display the map tensor
+    axes[0,1].imshow(map_.permute(1,2,0))
+    axes[0,1].axis('off')  # Remove axes
+
+    # Display the density tensor
+    axes[0,2].imshow(den.squeeze(0).squeeze(0).cpu().numpy())
+    axes[0,2].axis('off')
+
+    # Display the true image tensor
+    true_img = (torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/train/img/0017.pt')+1)/2
+    _, approx_density = s.counter.get_count(true_img)
+
+    axes[1,0].imshow(resize_transform(true_img).squeeze(0).cpu().permute(1,2,0))
+    axes[1,0].axis('off')
+
+    # Display the true density tensor
+    axes[1,1].imshow(resize_transform(approx_density).squeeze(0).squeeze(0).cpu().numpy())
+    axes[1,1].axis('off')
+
+    axes[1,2].imshow(torch.randn(resolution))
+    axes[1,2].axis('off')
+
+
+    fig.savefig(os.path.join('./imgs_dump', 'sample_img.png'))
+    plt.show()
+    '''
+
 #%%
-#from STEERER.inference import CounterWrapper
+if __name__ == "__main__": 
+    #main_single()
+    main_plural()
+#%%
 
-
-#model = CounterWrapper(device=3)
-
-# %%

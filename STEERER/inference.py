@@ -19,7 +19,7 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import torch
-from typing import Optional 
+from typing import Optional, Tuple
 
 # pi3p install mmcv==2.2.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.3/index.html
 # install mmengine as described on the git #
@@ -97,8 +97,10 @@ class CounterWrapper(Baseline_Counter):
         else:
             print('TypeError : Invalid device type given to move counter to new device')
     '''
-    def get_count(self, img: torch.Tensor, gaussians : Optional[list[torch.Tensor]] = None) -> float:
-        
+    def get_count(self, img: torch.Tensor, gaussians : Optional[list[torch.Tensor]] = None) -> Tuple[float,torch.Tensor]:
+        '''
+        output tensor of Tuple will be of dimension 1536, 2048 and should not be changed in order to preserve density informations.
+        '''
         reshape = T.Resize((1536, 2048),interpolation=T.InterpolationMode.BICUBIC)
         img = reshape(img)
         
