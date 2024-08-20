@@ -17,20 +17,44 @@ from tqdm import tqdm
 
 @dataclass
 class MapConfig :
-    include_box_size : bool = False
-    scale_gaussian : bool = False   #for type = 'RGB' this will return a map that seems black but still has the gt info
+    include_box_size : bool = True#False
+    scale_gaussian : bool = True#False   #for type = 'RGB' this will return a map that seems black but still has the gt info
     save_as : str = 'Tensor'  #or Tensor
-    type : str = 'RGB'    #'RGB' or 'HeatMap' -> if Tensor then has dim 1,512,512 instead of 3,512,512
-    save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/control_net/"  #location to save processed maps
+    type : str = 'HeatMap'#'RGB'    #'RGB' or 'HeatMap' -> if Tensor then has dim 1,512,512 instead of 3,512,512
+    save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/control_net_expanded/"  #location to save processed maps
     save_for : str = 'train' # or 'val' or 'test'
     load_dir : str = "train" # 'val' or 'test'
     CSV_include_count : bool = True
 
 ROOT_DIR = "/net/vid-raxus/storage/deeplearning/datasets/jhu/jhu_crowd_v2.0/"
+DEVICE = torch.device(1)
+'''
+    This file loads the Jhu-dataset for training. It requiresa the 'ROOT_DIR' to be ordered as such:
+    ./jhu_crowd/
+        /test/
+            gt/
+                id.txt
+                ...
+            image_labels.txt
+            images/
+                if.jpg
+                ...
+        /train/
+            gt/
+            image_labels.txt
+            images/
+        /val/
+            gt/
+            image_labels.txt
+            images/
 
+    It is recommended to set DEVICE to a GPU rather than CPU, otherwise the processing will be very long.
+    The dataset can be found here : http://www.crowd-counting.com/ 
+'''
 class CrowdDataSetv2(Dataset):
     """
         Version of CrowDataSet direcetly reading and saving the csv file as List[dictionnary]. Has key names adjusted to the lllyasviel Control Net.
+        gaussians have been commented out for now --> not in use during training
     """
     def __init__(self, config : MapConfig, load_as_PIL = False, set = 'train'):
         # choose set as 'val' or 'test' 
@@ -49,11 +73,13 @@ class CrowdDataSetv2(Dataset):
         source_path = f'{self.config.save_dir}{self.set}/map/'+item['id']
         target_path = f'{self.config.save_dir}{self.set}/img/'+item['id']
         id, ext = item['id'].split('.')
-        gaussian_paths = [f'{self.config.save_dir}{self.set}/gaussians/'+id+'-2048'+f'.{ext}',
-                          f'{self.config.save_dir}{self.set}/gaussians/'+id+'-1024'+f'.{ext}',
-                          f'{self.config.save_dir}{self.set}/gaussians/'+id+'-512'+f'.{ext}',
-                          f'{self.config.save_dir}{self.set}/gaussians/'+id+'-256'+f'.{ext}']
-
+        #gaussian_paths = [f'{self.config.save_dir}{self.set}/gaussians/'+id+'-2048'+f'.{ext}']
+                          #,
+                          #f'{self.config.save_dir}{self.set}/gaussians/'+id+'-1024'+f'.{ext}',
+                          #f'{self.config.save_dir}{self.set}/gaussians/'+id+'-512'+f'.{ext}',
+                          #f'{self.config.save_dir}{self.set}/gaussians/'+id+'-256'+f'.{ext}']
+        gaussian_path = f'{self.config.save_dir}{self.set}/gaussians/'+id+'-2048'+f'.{ext}'
+        
 
         # Weird behaviour here : if using cv2 or Image.open() then the error AttributeError or UnidentifiedImageError come out 
         # at some point in this function. It is as if i cannot properly open these images. Openning them as Tensors and then converting them works fine
@@ -61,26 +87,41 @@ class CrowdDataSetv2(Dataset):
         #target = cv2.imread(target_path)
         #print(type(source))
 
-        source = torch.permute(torch.load(source_path).to(dtype=torch.float32),(2,1,0))
-        target = torch.permute(torch.load(target_path).to(dtype=torch.float32),(2,1,0))
-        gaussians = list()
-        for path in gaussian_paths :
-            gaussians.append(torch.load(path).to(dtype=torch.float32))
+        source = torch.permute(torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
+        target = torch.permute(torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
+        source = torch.rot90(source, -1, [0,1])
+        target = torch.rot90(target, -1,[0,1])
+        
+        gaussian = torch.load(gaussian_path, map_location=torch.device('cpu')).to(dtype=torch.float32)
+        gaussian = torch.flip(gaussian, dims = [2])
+        #gaussians = list()
+        #for path in gaussian_paths :
+        #    gaussians.append(torch.load(path, map_location=torch.device('cpu')).to(dtype=torch.float32))
         
         if self.load_as_PIL :
             source = T.ToPILImage()(source)
             target = T.ToPILImage()(target)
 
         prompt = item['Prompt'].split(',')
-        if self.include_count and len(prompt) != 3 :
-            raise KeyError(f'MapConfig not fitting given data, CSV file at {self.config.save_dir}{self.set}/label.csv does not include crowd count. To Fix this, run write_csv_file() with MapConfig.include_count = True !')
+        if self.include_count :#and len(prompt) != 3 :
+            count = int(prompt[-1])
+            prompt = ''.join(prompt[:-1])
+            return dict(jpg=target, txt=prompt, hint=source, count = count, gaussian = gaussian)
+            '''#if config.save_dir != "/net/vid-raxus/storage/deeplearning/users/luk02485/control_net_expanded/" :
+            # This case handles a nwpu image fetch
+            count = int(prompt[1])
+            prompt = f'{prompt[0]}'
+            return dict(jpg=target, txt=prompt, hint=source, count = count, gaussian = gaussian)
+            #raise KeyError(f'MapConfig not fitting given data, CSV file at {self.config.save_dir}{self.set}/label.csv does not include crowd count. To Fix this, run write_csv_file() with MapConfig.include_count = True !')
         elif self.include_count :
             count = int(prompt[2])
             prompt = f'{prompt[0]}{prompt[1]}'
-            return dict(jpg=target, txt=prompt, hint=source, gaussians = gaussians, count = count)
+            return dict(jpg=target, txt=prompt, hint=source, count = count, gaussian = gaussian)
+            '''
         else :
-            prompt = f'{prompt[0]}{prompt[1]}'
-            return dict(jpg=target, txt=prompt, hint=source, gaussians = gaussians)
+            #prompt = f'{prompt[0]}{prompt[1]}'
+            prompt = ''.join(prompt[:-1])
+            return dict(jpg=target, txt=prompt, hint=source, gaussian = gaussian)
     
     def csv2dict(self) -> List[dict]:
         data = []
@@ -96,7 +137,8 @@ class CrowdDataSetv2(Dataset):
 
 def density_map(config : MapConfig, 
                 gt_path : str, 
-                img_dim : Tuple[int,int] ) -> torch.Tensor :
+                img_dim : Tuple[int,int],
+                precision = torch.float32 ) -> torch.Tensor :
     """
     INPUT : 
         config : MapConfig - configuration of how the label map for each img is to be generated.
@@ -116,15 +158,15 @@ def density_map(config : MapConfig,
     """
 
     if config.type == 'RGB':
-        map = torch.zeros(3,img_dim[1],img_dim[0])
+        map = torch.zeros(3,img_dim[1],img_dim[0], device = DEVICE, dtype=precision)
     elif config.type == 'HeatMap':
-        map =  torch.zeros(1,img_dim[1],img_dim[0])
+        map =  torch.zeros(1,img_dim[1],img_dim[0], device = DEVICE, dtype=precision)
     else :
         print("Error: Invalid argument 'MapConfig.type' was provided. Choices are 'RGB' or 'HeatMap'. ")
         sys.exit(1)
     
-    x = torch.arange(0, img_dim[1], dtype=torch.float32)
-    y = torch.arange(0, img_dim[0], dtype=torch.float32)
+    x = torch.arange(0, img_dim[1], dtype=precision, device = DEVICE )
+    y = torch.arange(0, img_dim[0], dtype=precision, device = DEVICE)
     Y,X = torch.meshgrid(x, y)
     if config.include_box_size:
         if config.scale_gaussian:
@@ -175,7 +217,7 @@ def density_map(config : MapConfig,
     if config.save_as == 'Tensor':
         return map
     elif config.save_as == 'PIL':
-        return T.ToPILImage()(map)
+        return T.ToPILImage()(map)  #Not recommended for density maps of type 'heatMap'
     else : 
         print("Error: Invalid argument 'MapConfig.save_as' was provided. Choices are 'Tensor' or 'PIL'. ")
         sys.exit(1)
@@ -183,21 +225,32 @@ def density_map(config : MapConfig,
 def process(img : torch.Tensor, 
             label : torch.Tensor,
             gaussian : torch.Tensor,
-            transform : T.transforms ) -> Tuple[torch.Tensor] :
+            dim : Tuple = (512,512) ) -> Tuple[torch.Tensor] :
     """
     Processes an image and its corresponding label. Assumes they have same dimension and label map is corrcetly oriented
     For future work: change transform into a list of torchvision.transforms  while respecting the current order.
     Ideally define a process dataclass and define the process steps globally on top of this file.
     """
+
+    transform = T.Resize((dim[0],dim[1]),interpolation=T.InterpolationMode.NEAREST_EXACT)
+
+    original_field = label.shape[1]*label.shape[2]
+    
     img = transform(img)
     label = transform(label)
+
+    new_field = dim[0] * dim[1]
+    
+    gaussian_preserving_ratio = original_field/new_field
+    label = gaussian_preserving_ratio * label
+
     p = np.random.uniform()
     if p > 0.5:
         img = T.RandomHorizontalFlip(1)(img)
         label = T.RandomHorizontalFlip(1)(label)
         gaussian = T.RandomHorizontalFlip(1)(gaussian)
     img = T.Normalize([0.5],[0.5])(img)
-    label = T.Normalize([0.5],[0.5])(label)
+    #label = T.Normalize([0.5],[0.5])(label)
     
     return img,label,gaussian
 
@@ -220,14 +273,15 @@ def load_to(config : MapConfig,
     Necessary step before loading a torch.DataSet. Checks for duplicates before running.
 
     Addded gaussian_config variable. this will always create a [1,H,W] gaussian maps and save in folder config.save_dir/config.save_for/gaussians/
-    in order to be used by STEERER.
+    in order to be used as comparison to the STEERER density.
     """
     print(f'Starting processing {len(batch)} images !\n'
     'Config: \n'
     f'  dim: {img_dim}\n'
     f'  include_box_size: {config.include_box_size}\n'
     f'  True_gaussian: {config.scale_gaussian}\n'
-    f'  save_directory: {config.save_dir}/{config.save_for}\n')
+    f'  save_directory: {config.save_dir}/{config.save_for}\n'
+    f'  type: {config.save_as}')
 
     gaussian_config = deepcopy(config)
     gaussian_config.include_box_size = True 
@@ -247,8 +301,9 @@ def load_to(config : MapConfig,
                 continue
             
             save_path_img = config.save_dir+config.save_for+"/img/"+id+extension
-            save_path_label = label,config.save_dir+config.save_for+"/map/"+id+extension
-            if os.path.exists(save_path_img) and os.path.exists(save_path_label):
+            save_path_label = config.save_dir+config.save_for+"/map/"+id+extension
+            save_path_gaussian = config.save_dir+config.save_for+"/gaussians/"+id+"-2048"+extension
+            if os.path.exists(save_path_img) and os.path.exists(save_path_label) and os.path.exists(save_path_gaussian):
                 progress.update(1)
                 continue
             
@@ -256,30 +311,36 @@ def load_to(config : MapConfig,
             config.save_as = 'Tensor'   #enforce Tensor output regardless because we are normalizing afterwards    
             label = density_map(config,gt_path= gt_file, img_dim=image.size)
             gaussian = density_map(gaussian_config,gt_path= gt_file, img_dim=image.size)
-
+            #print(f'found one gaussian :{gaussian.shape}')
             image = T.ToTensor()(image)
-            image,label,gaussian = process(image,label,gaussian, transform = T.Resize((img_dim,img_dim)))
-            
+            image,label,gaussian = process(image,label,gaussian, dim = (512,512))
+        
             dimensions = ['2048','1024','512','256']
-            gaussians = list()
-            gaussians.append(T.Resize((1536,2048),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
-            gaussians.append(T.Resize((768,1024),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
-            gaussians.append(T.Resize((384,512),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
-            gaussians.append(T.Resize((192,256),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
+            #print(f'gaussian.shape={gaussian.shape}')
+            gaussian_preserving_ratio = (gaussian.shape[1] * gaussian.shape[2])/ (1536 * 2048)
+            gaussian = T.Resize((1536,2048),interpolation=T.InterpolationMode.NEAREST_EXACT)(gaussian) * gaussian_preserving_ratio
+            #gaussians = list()
+            #gaussians.append(T.Resize((1536,2048),interpolation=T.InterpolationMode.NEAREST_EXACT)(gaussian) * gaussian_preserving_ratio)
+            #gaussians.append(T.Resize((768,1024),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
+            #gaussians.append(T.Resize((384,512),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
+            #gaussians.append(T.Resize((192,256),interpolation=T.InterpolationMode.BICUBIC)(gaussian))
 
             if save_as == 'Tensor':
                 torch.save(image,config.save_dir+config.save_for+"/img/"+id+extension)
                 torch.save(label,config.save_dir+config.save_for+"/map/"+id+extension)
-                for gaussian in range(4) :
-                    torch.save(gaussians.pop(0),config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
+                #for gaussian in range(4) :
+                #    torch.save(gaussians.pop(0),config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
+                torch.save(gaussian,config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
 
             elif save_as == 'PIL':
                 image = T.ToPILImage()(image)
                 label = T.ToPILImage()(label)
                 torch.save(image,config.save_dir+config.save_for+"/img/"+id+extension)
                 torch.save(label,config.save_dir+config.save_for+"/map/"+id+extension)
-                for gaussian in range(4) :
-                    torch.save(gaussians.pop(0),config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
+                #for gaussian in range(4) :
+                #    torch.save(gaussians.pop(0),config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
+                gaussian = T.ToPILImage()(gaussian)
+                torch.save(gaussian,config.save_dir+config.save_for+"/gaussians/"+id+'-'+dimensions.pop(0)+extension)
             else: 
                 print("Error: Invalid argument 'save_as'. Choices are 'Tensor' or 'PIL'. ")
                 sys.exit(1)
@@ -343,7 +404,7 @@ def write_csv_file(config : MapConfig,
     
     """
     print(f'Writing CSV file for {config.save_for} from {ROOT_DIR}{config.load_dir}\n'
-          f'include_count = {config.CSV_include_count}')
+          f'include_count = {config.CSV_include_count}\n')
     save_as = config.save_as
     include_count = config.CSV_include_count
 
@@ -357,7 +418,7 @@ def write_csv_file(config : MapConfig,
     elif save_as == 'PIL':
         file_extension = ".jpg"
     else:
-        print("Error: Invalid argument 'save_as'. Choices are 'Tensor' or 'JPEG'. ")
+        print("Error: Invalid argument 'save_as'. Choices are 'Tensor' or 'PIL'. ")
         sys.exit(1)
     
     k = 1
@@ -439,6 +500,46 @@ if __name__ == "__main__":
 
         print('[TRAIN IMAGES]\n')
         trainconfig = MapConfig()
+        
+        # Check folders existence
+        if not os.path.exists(trainconfig.save_dir) :
+            os.makedirs(os.path.join(trainconfig.save_dir,'train'))
+            os.makedirs(os.path.join(trainconfig.save_dir,'test'))
+            os.makedirs(os.path.join(trainconfig.save_dir,'val'))
+            folder = ['gaussians', 'img', 'map']
+
+            dir = os.path.join(trainconfig.save_dir+'train')
+            for subfolder in os.listdir(folder) :
+                os.makedirs(os.path.join(dir, subfolder))
+            
+            dir = os.path.join(trainconfig.save_dir+'test')
+            for subfolder in os.listdir(folder) :
+                os.makedirs(os.path.join(dir, subfolder))
+
+            dir = os.path.join(trainconfig.save_dir+'val')
+            for subfolder in os.listdir(folder) :
+                os.makedirs(os.path.join(dir, subfolder))
+        
+        else :
+            if not os.path.exists(os.path.join(trainconfig.save_dir,'train')) :
+                folder = ['gaussians', 'img', 'map']
+
+                dir = os.path.join(trainconfig.save_dir+'train')
+                for subfolder in os.listdir(folder) :
+                    os.makedirs(os.path.join(dir, subfolder))
+            if not os.path.exists(os.path.join(trainconfig.save_dir,'test')) :
+                folder = ['gaussians', 'img', 'map']
+
+                dir = os.path.join(trainconfig.save_dir+'test')
+                for subfolder in os.listdir(folder) :
+                    os.makedirs(os.path.join(dir, subfolder))
+            if not os.path.exists(os.path.join(trainconfig.save_dir,'val')) :
+                folder = ['gaussians', 'img', 'map']
+
+                dir = os.path.join(trainconfig.save_dir+'val')
+                for subfolder in os.listdir(folder) :
+                    os.makedirs(os.path.join(dir, subfolder))
+            
         keys_list = write_csv_file(trainconfig,return_id_list=True,filesize=filesize)
         load_to(trainconfig,batch=keys_list)
 

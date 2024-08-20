@@ -16,6 +16,7 @@ except:
     XFORMERS_IS_AVAILBLE = False
     print("No module 'xformers'. Proceeding without it.")
 
+#XFORMERS_IS_AVAILBLE = False
 
 def get_timestep_embedding(timesteps, embedding_dim):
     """

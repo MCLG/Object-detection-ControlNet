@@ -1,31 +1,40 @@
 #%%
+import torch
 import sys
 control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
 if control_loc not in sys.path :
     sys.path.append(control_loc)
 
 #from ControlNetHome.share import *
-from data_processor import density_map, MapConfig
+from data_jhu import density_map, MapConfig
+
 import tempfile
 from ControlNetHome.cldm.model import create_model, load_state_dict
 from ControlNetHome.annotator.util import resize_image
+
 import numpy as np
-import torch
 from ControlNetHome.cldm.ddim_hacked import DDIMSampler
+
 from PIL import Image
-import torch
 import pytorch_lightning as pl 
+
 from torchvision import transforms as T
+
 from ControlNetHome.cldm.cldm import ControlLDM
+
 import glob
 import os 
 from typing import Tuple, Optional
 import random as rd 
+
 from ControlNetHome.ldm.util import rotate_clockwise
+
 import matplotlib.pyplot as plt
 
 from STEERER.inference import CounterWrapper
+
 from mmengine.config.config import Config
+
 
 steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
 if steerer_loc not in sys.path :
@@ -48,7 +57,9 @@ def ckpt_search() -> str :
         checkpoints = glob.glob(ver + '/checkpoints/epoch=*')
     return checkpoints[0]
 
-#%%
+
+
+
 class crowd_sampler(pl.LightningModule):
     '''
     WIP - A wrapper class for the trained crowd generating control net. Includes :
@@ -183,8 +194,10 @@ class crowd_sampler(pl.LightningModule):
         output = []
         den_output = []
         while N != 0 :
-
-            samples,_ = self.sample(control=control, prompt=prompt,N=N, return_control= True)
+            
+            print(N)
+            samples = self.sample(control=control, prompt=prompt,N=N, return_control= True)
+            
             #samples = samples.to(self.counter.device)
             if isinstance(samples,list):
                 remove = []
@@ -200,11 +213,14 @@ class crowd_sampler(pl.LightningModule):
                         den_output.append(den)
                         remove.append(k)
                         N -= 1
-                remove = remove.sort(reverse=True)
+                if not remove :
+                    break
+                remove.sort(reverse=True)
+                control = [tens for tens in torch.tensor_split(control, control.shape[0])]
                 for k in remove :
                     control.pop(k)
                     true_count.pop(k)
-
+                control = torch.cat(control)
             else :
                 c,den = self.counter.get_count(samples[0])
                 if true_count is None:
@@ -219,7 +235,7 @@ class crowd_sampler(pl.LightningModule):
                 
         return output,den_output
         
-#%%
+
 def main_single() :
 
     # Load the model
@@ -234,7 +250,12 @@ def main_single() :
     sample,dens = s.confidence_sample(p = 50, control=map.unsqueeze(0), true_count= [13],
                     prompt='a photo of a crowd of people running, no weather degradation',
                     N=1)
-    
+    try :
+        print(len(sample),len(sample[0]),type(sample),type(sample[0]))
+        print(sample[0][0].shape)
+    except :
+        pass   
+    sample = sample[0]     
     # reshape the samples 
     resolution = (1536, 2048)
     sample_ = T.ToPILImage()(sample[0].squeeze(0).cpu())
@@ -302,11 +323,11 @@ def main_plural() :
     sample,dens = s.confidence_sample(p = 50, control=torch.cat(maps), true_count= [13,80,27],
                     prompt='a photo of a crowd of people in the street, no weather degradation',
                     N=len(paths))
-    '''
+    
     # reshape the samples 
     resolution = (1536, 2048)
     sample_ = T.ToPILImage()(sample[0].squeeze(0).cpu())
-    map_ = T.ToPILImage()(map.squeeze(0).cpu())
+    map_ = T.ToPILImage()(maps[0].squeeze(0).cpu())
     
     
     resize_transform = T.Resize(resolution, interpolation=T.InterpolationMode.BICUBIC)
@@ -353,11 +374,11 @@ def main_plural() :
 
     fig.savefig(os.path.join('./imgs_dump', 'sample_img.png'))
     plt.show()
-    '''
+    
 
-#%%
+
 if __name__ == "__main__": 
     #main_single()
     main_plural()
-#%%
+
 

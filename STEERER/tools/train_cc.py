@@ -129,7 +129,7 @@ def main():
             rank, world_size = get_dist_info()
             args.local_rank = rank
     device = torch.device('cuda:{}'.format(args.local_rank))
-
+    print(f'[curretn location : "/home/luk02485/development/ControlNet/STEERER/tools/train_cc.py:132:"] setting device via args.local_rank = {args.local_rank}')
     # build model
 
     model = Baseline_Counter(config.network,config.dataset.den_factor,config.train.route_size,device)

@@ -11,21 +11,32 @@ import torch.nn as nn
 import numpy as np
 import pytorch_lightning as pl
 from torch.optim.lr_scheduler import LambdaLR
+
 from einops import rearrange, repeat
 from contextlib import contextmanager, nullcontext
+
 from functools import partial
+
 import itertools
 from tqdm import tqdm
 from torchvision.utils import make_grid
+
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
 from omegaconf import ListConfig
 
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
+
 from ldm.modules.ema import LitEma
+
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
+
 from ldm.models.autoencoder import IdentityFirstStage, AutoencoderKL
+
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
+
 from ldm.models.diffusion.ddim import DDIMSampler
+
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -165,6 +176,9 @@ class DDPM(pl.LightningModule):
         self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod)))
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
+        # NEW:
+        self.register_buffer('sqrt_one_minus_alphas_cumprod_divided_alphas_cumprod', to_torch(np.sqrt((1-alphas_cumprod) / alphas_cumprod)))
+        
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (
                 1. - alphas_cumprod) + self.v_posterior * betas
@@ -287,6 +301,13 @@ class DDPM(pl.LightningModule):
                 extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
         )
 
+    # ADDED FOR CONTROL NET CROWD AUGMENTATION ################################
+    def predict_reconstructed_from_noise(self, x_t, t, noise) :
+        return (
+            extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
+            extract_into_tensor(self.sqrt_one_minus_alphas_cumprod_divided_alphas_cumprod, t, x_t.shape)* noise
+        )
+    ##########################################
     def predict_start_from_z_and_v(self, x_t, t, v):
         # self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod)))
         # self.register_buffer('sqrt_one_minus_alphas_cumprod', to_torch(np.sqrt(1. - alphas_cumprod)))
@@ -296,6 +317,7 @@ class DDPM(pl.LightningModule):
         )
 
     def predict_eps_from_z_and_v(self, x_t, t, v):
+        #print(f'predicting noise / / / v.shape : {v.shape} / / / x_t.shape : {x_t.shape}')
         return (
                 extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape) * v +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape) * x_t
@@ -428,6 +450,7 @@ class DDPM(pl.LightningModule):
     def shared_step(self, batch):
         x = self.get_input(batch, self.first_stage_key) # Passes though encoder and we get shape [N, 4, 64, 64]
         loss, loss_dict = self(x)
+        
         return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
@@ -444,14 +467,14 @@ class DDPM(pl.LightningModule):
         loss, loss_dict = self.shared_step(batch)   # the batch here has initial JPG format [N,512,512,3] 
 
         self.log_dict(loss_dict, prog_bar=True,
-                      logger=True, on_step=True, on_epoch=True)
-
-        self.log("global_step", self.global_step,
-                 prog_bar=True, logger=True, on_step=True, on_epoch=False)
+                      logger=True, on_step=True, on_epoch=True, sync_dist=True, batch_size=len(batch))
+        
+        self.log("global_step", self.global_step, batch_size=len(batch),
+                 prog_bar=True, logger=True, on_step=True, on_epoch=False, sync_dist=True)
 
         if self.use_scheduler:
             lr = self.optimizers().param_groups[0]['lr']
-            self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+            self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False,sync_dist=True, batch_size=len(batch))
 
         return loss
 
@@ -461,8 +484,8 @@ class DDPM(pl.LightningModule):
         with self.ema_scope():
             _, loss_dict_ema = self.shared_step(batch)
             loss_dict_ema = {key + '_ema': loss_dict_ema[key] for key in loss_dict_ema}
-        self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-        self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
+        self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True, batch_size=len(batch))
+        self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True, batch_size=len(batch))
 
     def on_train_batch_end(self, *args, **kwargs):
         if self.use_ema:
@@ -770,12 +793,12 @@ class LatentDiffusion(DDPM):
     def get_input(self, batch, k, return_first_stage_outputs=False, force_c_encode=False,
                   cond_key=None, return_original_cond=False, bs=None, return_x=False):
         
-
+        
         x = super().get_input(batch, k)
         if bs is not None:
             x = x[:bs]
         x = x.to(self.device)
-
+        
         encoder_posterior = self.encode_first_stage(x)
         
         z = self.get_first_stage_encoding(encoder_posterior).detach()
@@ -841,6 +864,8 @@ class LatentDiffusion(DDPM):
     def shared_step(self, batch, **kwargs):
         x, c = self.get_input(batch, self.first_stage_key)
         loss = self(x, c)
+        self.log("global_step", self.global_step, batch_size=len(batch),
+                 prog_bar=True, logger=True, on_step=True, on_epoch=False, sync_dist=True)
         return loss
 
     def forward(self, x, c, *args, **kwargs):
@@ -908,6 +933,7 @@ class LatentDiffusion(DDPM):
 
         # In scope temp copy for ControlLDM p_loss()
         output_copy = model_output.detach()
+        x_noisy = x_noisy.detach()
 
 
         loss_dict = {}
@@ -940,7 +966,7 @@ class LatentDiffusion(DDPM):
         loss += (self.original_elbo_weight * loss_vlb)
         loss_dict.update({f'{prefix}/loss': loss})
 
-        return loss, loss_dict, output_copy
+        return loss, loss_dict, output_copy, x_noisy
 
 
 

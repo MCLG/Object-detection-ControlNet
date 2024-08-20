@@ -72,6 +72,7 @@ def main():
     random_seed_setting(config)
 
     # build model
+    print(f'[current location : "/home/luk02485/development/ControlNet/STEERER/cam.py:142:"] device passed as arg : {args.local_rank}')
     device = torch.device('cuda:{}'.format(args.local_rank))
 
     model = Baseline_Counter(config.network,config.dataset.den_factor,config.train.route_size,device)

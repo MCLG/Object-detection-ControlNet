@@ -24,7 +24,7 @@ import torchvision.transforms as T
 from PIL import Image
 
 def get_count(img: np.array) -> float:
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = 'cpu'
     config = Config.fromfile('configs/SHHB_final.py')
     model = Baseline_Counter(config.network, config.dataset.den_factor, config.train.route_size, device)
     pretrained_dict = torch.load('PretrainedModels/SHHB_mae_5.8_mse_8.5.pth')

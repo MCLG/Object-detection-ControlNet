@@ -60,11 +60,48 @@ follow the steps :
 
     Everything should run without warning/error now.
 
-## Changes to the original ControlNet Git
+## Changes done to the original ControlNet Code
 
-The following changes have been done to create and load the model on GPU directly rather than CPU.
-    Process kept getting killed because ran out of RAM. 
-    Followed merge pull request : https://github.com/andreemic/ControlNet/commit/d04147f037b3da6d50d594876c0bfffecbe9ed13#diff-e349da9602c94a21a14bd5bee4f90d52c843e66a0c94ecf723ac06d77652e257
+(Old) The following changes have been done to create and load the model on GPU directly rather than CPU. This allows for single GPU training
+* Process kept getting killed because ran out of RAM. 
+    * Followed git issue : https://github.com/andreemic/ControlNet/commit/d04147f037b3da6d50d594876c0bfffecbe9ed13#diff-e349da9602c94a21a14bd5bee4f90d52c843e66a0c94ecf723ac06d77652e257
         - cldm.model.py         at line 12 : changed default value 'location='cuda'.'
                                 at  line 26 : replaced with 'model = instantiate_from_config(config.model).cuda()'
         - tool_add_control.py   at line 48 : removed 'location' variable -> runs with default 'cuda' 
+
+(latest) To allow for multiple cpu training, we revert back to the way the models were initialized in the original code :
+```python
+model=create_model('./ControlNetHome/models/cldm_v15.yaml'
+        ,location=None).cpu()
+
+interm = load_state_dict(resume_path
+        , STEERER_path=STEERER_path
+        ,location=None)
+
+model.load_state_dict(interm,strict = False)
+```
+where the functions "create_model()", "load_state_dict()" are the same as in the ControlNet git with the sception that the STEERER dict are also loaded.
+
+### Xformers package :
+An issue with trying the multi-GPU training is to initialize all models on the CPU and make sure no process is started i.e. no torch.cuda is called prior to launching `pl.fit()`. To solve this :
+*  Restrict `CUDA_VISIBLE_DEVICES` to all unused GPU and exclude `Device:0` completely as the background processes are running constantly which results in at least one to be present when calling `torch.cuda.list_active_processes()`.
+* Comment out the xformers import and set `XFORMERS_IS_AVAILBLE = False` in the files _ControlNetHome/ldm/modules/attention.py_ and _ControlNetHome/ldm/modules/diffusionmodules/model.py_. This package is being used to import the object `memory_efficient_attention()` from xformer.ops but is not used in the Class ojects that are being imported from the above mentioned files. It is during the import of xformers.ops that `torch.cuda.is_initialized() = True`.
+
+## Overview of the model loading
+```bash
+
+  | Name              | Type               | Params
+---------------------------------------------------------
+0 | model             | DiffusionWrapper   | 859 M
+1 | first_stage_model | AutoencoderKL      | 83.7 M
+2 | cond_stage_model  | FrozenCLIPEmbedder | 123 M
+3 | control_model     | ControlNet         | 361 M
+4 | counter           | CounterWrapper     | 64.6 M
+---------------------------------------------------------
+1.2 B     Trainable params
+271 M     Non-trainable params
+1.5 B     Total params
+5,968.636 Total estimated model params size (MB)
+```
+
+This is first loaded on the CPU. 

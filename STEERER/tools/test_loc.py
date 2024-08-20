@@ -91,6 +91,7 @@ def main():
     gpus = config.gpus
     distributed = torch.cuda.device_count() > 1
     if distributed:
+        print(f'[curretn location : "/home/luk02485/development/ControlNet/STEERER/tools/test_loc.py:94:"] in distributed - setting device via args.local_ranl = {args.local_rank}')
         torch.cuda.set_device(args.local_rank)
 
         init_dist(args.launcher)
@@ -105,7 +106,7 @@ def main():
 
     # build model
     device = torch.device('cuda:{}'.format(args.local_rank))
-
+    print(f'[curretn location : "/home/luk02485/development/ControlNet/STEERER/tools/test_loc.py:108:"] setting device via args.local_ranl = {args.local_rank}')
     model = Baseline_Counter(config.network,config.dataset.den_factor,config.train.route_size,device)
 
     if args.checkpoint:

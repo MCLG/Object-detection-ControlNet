@@ -28,7 +28,6 @@ from typing import Optional, Tuple
 #pip3 install dict_recursive_update
 #pip3 install yacs
 
-
 class CounterWrapper(Baseline_Counter):
 
     def __init__(self,
@@ -39,21 +38,17 @@ class CounterWrapper(Baseline_Counter):
                  *args, **kwargs): #self, config=None,weight=200, route_size=(64,64),device=None):
 
         self.instantiate_from_config(kwargs)
-        #self.device = torch.device(device)
+        self.device = torch.device(device)
+
         config = Config.fromfile(path_to_config)
-        '''
-        if device == None :
-            self.device = 'cpu'
-        else:
-            self.device = device
-        '''
+        
         super().__init__(config.network, config.dataset.den_factor, config.train.route_size, torch.device(device))
 
         if path is None :
-            pretrained_dict = torch.load('/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth')
+            pretrained_dict = torch.load('/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth', map_location=self.device)
 
         elif os.path.exists(path):
-            pretrained_dict = torch.load(path)
+            pretrained_dict = torch.load(path, map_location= self.device)
 
         else :
             pprint(f'path:{path} to weights of counter not found. Check for path again or select None for base JHU-weights.')
@@ -114,8 +109,10 @@ class CounterWrapper(Baseline_Counter):
             for k in range(len(imgs_batch)) :
                 res = self.get_count(imgs_batch[k])
                 batch_count_result.append(res[0]) #not passing gaussians yet
+                #print(f'inference line 112 : k={k}, res[0]={res[0]}, res[1].shape={res[1].shape}')
                 batch_dens.append(res[1])
-            return torch.tensor(batch_count_result, device = self.device), batch_dens
+                
+            return torch.tensor(batch_count_result, device = self.device), torch.cat(batch_dens, dim = 0)
         
         if gaussians is None :
             labels = list()
@@ -136,4 +133,3 @@ class CounterWrapper(Baseline_Counter):
         pred_cnt = pre_den.sum().item()
 
         return pred_cnt,pre_den
-

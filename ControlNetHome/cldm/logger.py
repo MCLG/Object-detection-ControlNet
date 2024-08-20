@@ -6,15 +6,17 @@ import torchvision
 from PIL import Image
 from pytorch_lightning.callbacks import Callback
 import pytorch_lightning
-print(pytorch_lightning.__version__)
+
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
 
 class ImageLogger(Callback):
-    def __init__(self, batch_frequency=2000, max_images=4, clamp=True, increase_log_steps=True,
+    def __init__(self, batch_size ,batch_frequency=2000, max_images=4, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
                  log_images_kwargs=None):
         super().__init__()
+
+        self.batch_size = batch_size
         self.rescale = rescale
         self.batch_freq = batch_frequency
         self.max_images = max_images

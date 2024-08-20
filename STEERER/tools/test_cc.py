@@ -96,7 +96,7 @@ def main():
 
     # build model
     device = torch.device('cuda:{}'.format(args.local_rank))
-
+    print(f'[current location : "/home/luk02485/development/ControlNet/STEERER/tools/test_cc.py:80-94"] setting device via ars.local-rank={args.local_rank}')
     model = Baseline_Counter(config.network,config.dataset.den_factor,config.train.route_size,device)
 
     # dump_input = torch.rand(
