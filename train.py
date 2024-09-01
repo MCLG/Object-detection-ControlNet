@@ -116,7 +116,7 @@ def main():
     learning_rate = 2e-5#1e-5   SET TO PAPER VALUES
     sd_locked = True
     only_mid_control = False
-    AVAILABLE_GPU = [1,2]
+    AVAILABLE_GPU = [0,1]
 
     model = create_model('./ControlNetHome/models/cldm_v15_2.yaml',location=None).cpu()
 
@@ -134,7 +134,7 @@ def main():
 
 
     # Data        
-    config = MapConfig
+    config = MapConfig()
 
     train_set = CrowdDataSetv2(config)
 
@@ -145,21 +145,27 @@ def main():
     train_set = ConcatDataset([train_set,nwpuset])
     train_loader = DataLoader(train_set, num_workers=16, batch_size=batch_size, shuffle=True)
 
-    config.load_dir = 'val'
-    val_set = CrowdDataSetv2(config)
+    #config.load_dir = 'val'
+    val_set = CrowdDataSetv2(config,set='val')
     val_loader = DataLoader(val_set, num_workers=16, persistent_workers=True ,batch_size=batch_size, shuffle=False)
 
     #logger = ImageLogger(batch_frequency=logger_freq, batch_size= batch_size, log_first_step= True)
-    
+    print(f'[starting training with magnitude regularizer] : \n'
+          f'magnitude_regularizer={model.magnitude_regularizer}\n'
+          f'start_epoch={model.smooth_magnitude_tuning_start}\n'
+          f'transition_smoothness={model.magnitude_reg_previous_importance}\n'
+          f'tune every = {model.magnitude_every_x_epochs}\n'            # is determined by trainer check_val_every_n_epoch
+          )
+
     torch.set_float32_matmul_precision('high')
-    trainer = pl.Trainer(devices=[0,2],accelerator="gpu", 
+    trainer = pl.Trainer(devices=AVAILABLE_GPU,accelerator="gpu", 
                         precision=32, 
                         profiler='simple',
                         num_nodes=1,
                         strategy='ddp_find_unused_parameters_true',
                         limit_train_batches=200,
                         limit_val_batches=50,
-                        max_steps=7000,
+                        max_steps=8000,
                         check_val_every_n_epoch = 5,
                         #callbacks=[logger],
                         accumulate_grad_batches= 4

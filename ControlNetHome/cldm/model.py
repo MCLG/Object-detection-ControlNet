@@ -53,7 +53,7 @@ def load_state_dict(ckpt_path, STEERER_path = None ,location = None):
 
     concat_state_dicts = dict(state_dict)
     concat_state_dicts.update(state_dict_steerer) 
-    print('Successfully concatenated Steerer and ControlNet state_dict')
+    print('Loaded STEERER and ControlNet state_dict \n')
     
     return concat_state_dicts
 

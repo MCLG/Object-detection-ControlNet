@@ -27,7 +27,7 @@ class MapConfig :
     CSV_include_count : bool = True
 
 ROOT_DIR = "/net/vid-raxus/storage/deeplearning/datasets/jhu/jhu_crowd_v2.0/"
-DEVICE = torch.device(1)
+DEVICE = torch.device('cpu')
 '''
     This file loads the Jhu-dataset for training. It requiresa the 'ROOT_DIR' to be ordered as such:
     ./jhu_crowd/
@@ -509,15 +509,15 @@ if __name__ == "__main__":
             folder = ['gaussians', 'img', 'map']
 
             dir = os.path.join(trainconfig.save_dir+'train')
-            for subfolder in os.listdir(folder) :
+            for subfolder in folder :
                 os.makedirs(os.path.join(dir, subfolder))
             
             dir = os.path.join(trainconfig.save_dir+'test')
-            for subfolder in os.listdir(folder) :
+            for subfolder in folder :
                 os.makedirs(os.path.join(dir, subfolder))
 
             dir = os.path.join(trainconfig.save_dir+'val')
-            for subfolder in os.listdir(folder) :
+            for subfolder in folder :
                 os.makedirs(os.path.join(dir, subfolder))
         
         else :
@@ -525,19 +525,19 @@ if __name__ == "__main__":
                 folder = ['gaussians', 'img', 'map']
 
                 dir = os.path.join(trainconfig.save_dir+'train')
-                for subfolder in os.listdir(folder) :
+                for subfolder in folder :
                     os.makedirs(os.path.join(dir, subfolder))
             if not os.path.exists(os.path.join(trainconfig.save_dir,'test')) :
                 folder = ['gaussians', 'img', 'map']
 
                 dir = os.path.join(trainconfig.save_dir+'test')
-                for subfolder in os.listdir(folder) :
+                for subfolder in folder :
                     os.makedirs(os.path.join(dir, subfolder))
             if not os.path.exists(os.path.join(trainconfig.save_dir,'val')) :
                 folder = ['gaussians', 'img', 'map']
 
                 dir = os.path.join(trainconfig.save_dir+'val')
-                for subfolder in os.listdir(folder) :
+                for subfolder in folder :
                     os.makedirs(os.path.join(dir, subfolder))
             
         keys_list = write_csv_file(trainconfig,return_id_list=True,filesize=filesize)

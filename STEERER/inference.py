@@ -73,31 +73,15 @@ class CounterWrapper(Baseline_Counter):
         super().to(device)
         self.device = device
         return self
-    '''
-    def move_to(self, device):
-        print(f'[NEW DEVICE] : \n ')
-        if type(device) == str :
-            self = self.to(device)
-            #self.device = device
-            print(f'sent to {device} !')
-        elif type(device) == int :
-            self = self.to(f'cuda:{device}')
-            #self.device = f'cuda:{device}'
-            print(f'sent to "cuda:{device}" !')
-        elif type(device) == 'cuda':
-            try:
-                self = self.to(device+':'+str(device.index))
-            except:
-                print('TypeError : Failed to set new device "cuda" to CounterWrapper')
-        else:
-            print('TypeError : Invalid device type given to move counter to new device')
-    '''
+    
+    @torch.no_grad()
     def get_count(self, img: torch.Tensor, gaussians : Optional[list[torch.Tensor]] = None) -> Tuple[float,torch.Tensor]:
         '''
         output tensor of Tuple will be of dimension 1536, 2048 and should not be changed in order to preserve density informations.
         '''
         reshape = T.Resize((1536, 2048),interpolation=T.InterpolationMode.BICUBIC)
-        img = reshape(img)
+        if img.shape[-2:] != torch.Size([1536,2048]):
+            img = reshape(img)
         
         if len(img.shape) == 3 :
             img = img.unsqueeze(0).to(self.device)

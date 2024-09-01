@@ -17,16 +17,16 @@ from data_jhu import CrowdDataSetv2
 if __name__ == "__main__" :    
     DEVICE = torch.device('cpu')        # specify device to create tensor maps here
 
-ROOT_DIR = '/net/vid-raxus/storage/deeplearning/datasets/nwpu/'
-config = MapConfig()
+    ROOT_DIR = '/net/vid-raxus/storage/deeplearning/datasets/nwpu/'
+    config = MapConfig()
 
-# Change here for different save location of processed imgs and  densities
-if os.path.exists('/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'):
-    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'
-else :
-    os.mkdir('/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/')
-    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'
-    
+    # Change here for different save location of processed imgs and  densities
+    if os.path.exists('/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'):
+        config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'
+    else :
+        os.mkdir('/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/')
+        config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'
+        
 '''
     This files loads the NWPU-dataset for trainin. It requires the 'ROOT_DIR' to be ordered as such :
     ./nwpu/
@@ -345,8 +345,7 @@ if __name__ == "__main__" :
         sys.exit(1)   
     print(f'Processing {args.arg2} images\n')
 
-    config =MapConfig()
     conf_save_for = s
-
+    print(f'save_dir = {config.save_dir}\n')
     load(config=config, size=filesize)
 
