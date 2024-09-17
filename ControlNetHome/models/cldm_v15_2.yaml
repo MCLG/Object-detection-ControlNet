@@ -78,5 +78,5 @@ model:
     cond_stage_config:
       target: ldm.modules.encoders.modules.FrozenCLIPEmbedder
     
-    counter_stage_config:
-      target: STEERER.inference.CounterWrapper
+    #counter_stage_config:
+    #  target: STEERER.inference.CounterWrapper

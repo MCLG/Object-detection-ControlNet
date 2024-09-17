@@ -12,136 +12,360 @@
         current_epoch : 4
         lenght data loader : 16
         tuning every : 5 epochs 
-[Updated] magnitude_regularizer=0.22263765335083008 / ratios = (42.43394088745117|0.1135914996266365) / maxLc = 0.28021538257598877 / maxLcount = 0.28021538257598877
+[Updated] magnitude_regularizer=0.34535813331604004 / ratios = (66.90757751464844|0.18405205011367798)
 
-[Updated] magnitude_regularizer=0.28556355834007263 / ratios = (54.88148498535156|0.25122568011283875) / maxLc = 0.3204463720321655 / maxLcount = 0.3204463720321655
+minLc = 0.07728838920593262 / minLcount = 0.07728838920593262 / maxLc = 0.28125301003456116 / maxLcount = 0.28125301003456116[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.28325995802879333 / ratios = (54.571903228759766|0.10009023547172546)
 
+minLc = 0.08788143843412399 / minLcount = 0.08788143843412399 / maxLc = 0.30299046635627747 / maxLcount = 0.30299046635627747[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.42757201194763184 / ratios = (83.42866516113281|0.10573364049196243)
+
+minLc = 0.0064539192244410515 / minLcount = 0.0064539192244410515 / maxLc = 0.3394579589366913 / maxLcount = 0.3394579589366913[Updated] magnitude_regularizer=0.13761503994464874 / ratios = (25.30825424194336|0.2347545027732849)
+
+minLc = 0.1198497861623764 / minLcount = 0.1198497861623764 / maxLc = 0.27507907152175903 / maxLcount = 0.27507907152175903[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.15113414824008942 / ratios = (28.102794647216797|0.14403553307056427)
+
+minLc = 0.09840571880340576 / minLcount = 0.09840571880340576 / maxLc = 0.3101882040500641 / maxLcount = 0.3101882040500641[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.244362011551857 / ratios = (46.773460388183594|0.11894404143095016)
+
+minLc = 0.13762274384498596 / minLcount = 0.13762274384498596 / maxLc = 0.3256705105304718 / maxLcount = 0.3256705105304718[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.18245919048786163 / ratios = (34.28062057495117|0.23121602833271027)
+
+minLc = 0.11274172365665436 / minLcount = 0.11274172365665436 / maxLc = 0.28201794624328613 / maxLcount = 0.28201794624328613[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.3792344927787781 / ratios = (73.74776458740234|0.11913369596004486)
+
+minLc = 0.11254370212554932 / minLcount = 0.11254370212554932 / maxLc = 0.3608297109603882 / maxLcount = 0.3608297109603882[Updated] magnitude_regularizer=0.3707295060157776 / ratios = (72.03581237792969|0.13008859753608704)
+
+minLc = 0.06118934974074364 / minLcount = 0.06118934974074364 / maxLc = 0.24130147695541382 / maxLcount = 0.24130147695541382[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+        tuning every : 1 epochs 
+[Updated] magnitude_regularizer=0.2446599006652832 / ratios = (46.75847625732422|0.19350460171699524)
+
+minLc = 0.09050966799259186 / minLcount = 0.09050966799259186 / maxLc = 0.2693157494068146 / maxLcount = 0.2693157494068146[Updated] magnitude_regularizer=0.8762094378471375 / ratios = (173.17649841308594|0.08540146797895432)
+
+minLc = 0.07945847511291504 / minLcount = 0.07945847511291504 / maxLc = 0.26594528555870056 / maxLcount = 0.26594528555870056[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[Updated] magnitude_regularizer=0.36499136686325073 / ratios = (70.93125915527344|0.08701341599225998)
+
+minLc = 0.09007861465215683 / minLcount = 0.09007861465215683 / maxLc = 0.23305895924568176 / maxLcount = 0.23305895924568176[Updated] magnitude_regularizer=0.41309037804603577 / ratios = (80.44886779785156|0.18920882046222687)
+
+minLc = 0.03213099390268326 / minLcount = 0.03213099390268326 / maxLc = 0.30310606956481934 / maxLcount = 0.30310606956481934[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[Updated] magnitude_regularizer=0.39349186420440674 / ratios = (76.60502624511719|0.11334709078073502)
+
+minLc = 0.12423405796289444 / minLcount = 0.12423405796289444 / maxLc = 0.294961154460907 / maxLcount = 0.294961154460907[Updated] magnitude_regularizer=0.3726019859313965 / ratios = (72.46376037597656|0.07663758844137192)
+
+minLc = 0.005175997503101826 / minLcount = 0.005175997503101826 / maxLc = 0.2663666009902954 / maxLcount = 0.2663666009902954[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[Updated] magnitude_regularizer=0.23926174640655518 / ratios = (45.73187255859375|0.14047466218471527)
+
+minLc = 0.038737550377845764 / minLcount = 0.038737550377845764 / maxLc = 0.2582694888114929 / maxLcount = 0.2582694888114929[Updated] magnitude_regularizer=0.339611291885376 / ratios = (65.82136535644531|0.12089677900075912)
+
+minLc = 0.11997528374195099 / minLcount = 0.11997528374195099 / maxLc = 0.3363642692565918 / maxLcount = 0.3363642692565918[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[tuning step]   config : 
+        start_epoch : 0 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 0
+        lenght data loader : 16
+[Updated] magnitude_regularizer=0.3419593274593353 / ratios = (66.23247528076172|0.17938995361328125)
+
+minLc = 0.09342726320028305 / minLcount = 0.09342726320028305 / maxLc = 0.3487989902496338 / maxLcount = 0.3487989902496338[Updated] magnitude_regularizer=0.28695642948150635 / ratios = (55.324493408203125|0.08679510653018951)
+
+minLc = 0.12447942048311234 / minLcount = 0.12447942048311234 / maxLc = 0.2655760645866394 / maxLcount = 0.2655760645866394[tuning step]   config : 
+        start_epoch : 4 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 4
+        lenght data loader : 16
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : 0.22263765335083008
+        current_magnitude_regularizer : 0.009999999776482582
+        current_epoch : 4
+        lenght data loader : 16
+[Updated] magnitude_regularizer=0.45063722133636475 / ratios = (88.03450775146484|0.11293574422597885)
+
+minLc = 0.10739440470933914 / minLcount = 0.10739440470933914 / maxLc = 0.26179060339927673 / maxLcount = 0.26179060339927673[Updated] magnitude_regularizer=0.0940612256526947 / ratios = (16.577056884765625|0.25518932938575745)
+
+minLc = 0.04197218269109726 / minLcount = 0.04197218269109726 / maxLc = 0.27687346935272217 / maxLcount = 0.27687346935272217[tuning step]   config : 
+        start_epoch : 4 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.45063722133636475
         current_epoch : 9
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : 0.22263765335083008
+        current_magnitude_regularizer : 0.45063722133636475
         current_epoch : 9
         lenght data loader : 16
-        tuning every : 5 epochs 
-Could not write culprit: 'int' object has no attribute 'item'
-[Updated] magnitude_regularizer=inf / ratios = (inf|3.843997001647949) / maxLc = 0.40688347816467285 / maxLcount = 0.40688347816467285
+[Updated] magnitude_regularizer=0.49418899416923523 / ratios = (1.648943543434143|7.962686538696289)
 
-[Updated] magnitude_regularizer=0.257775217294693 / ratios = (5.021542072296143|2.4512453079223633) / maxLc = 0.3639562129974365 / maxLcount = 0.3639562129974365
+minLc = 0.10711826384067535 / minLcount = 0.10711826384067535 / maxLc = 0.38215717673301697 / maxLcount = 0.38215717673301697[Updated] magnitude_regularizer=0.47712719440460205 / ratios = (0.7778844833374023|5.421387195587158)
 
-[tuning step]   config : 
+minLc = 0.04608915373682976 / minLcount = 0.04608915373682976 / maxLc = 0.21962416172027588 / maxLcount = 0.21962416172027588[tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : 0.257775217294693
+        current_magnitude_regularizer : 0.47712719440460205
         current_epoch : 14
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : 0.257775217294693
+        current_magnitude_regularizer : 0.47712719440460205
         current_epoch : 14
         lenght data loader : 16
-        tuning every : 5 epochs 
-Could not write culprit: 'int' object has no attribute 'item'
-[Updated] magnitude_regularizer=inf / ratios = (inf|2.601440906524658) / maxLc = 0.35046112537384033 / maxLcount = 0.35046112537384033
+[Updated] magnitude_regularizer=0.5368456840515137 / ratios = (0.7034988403320312|12.194445610046387)
 
-[Updated] magnitude_regularizer=0.27907219529151917 / ratios = (1.8598990440368652|2.9150478839874268) / maxLc = 0.25106483697891235 / maxLcount = 0.25106483697891235
+minLc = 0.07523547112941742 / minLcount = 0.07523547112941742 / maxLc = 0.2522850036621094 / maxLcount = 0.2522850036621094[Updated] magnitude_regularizer=0.5031086206436157 / ratios = (0.8261805772781372|5.324357986450195)
 
-[tuning step]   config : 
+minLc = 0.014182704500854015 / minLcount = 0.014182704500854015 / maxLc = 0.2364354133605957 / maxLcount = 0.2364354133605957[tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : inf
+        current_magnitude_regularizer : 0.5031086206436157
         current_epoch : 19
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : inf
+        current_magnitude_regularizer : 0.5031086206436157
         current_epoch : 19
         lenght data loader : 16
-        tuning every : 5 epochs 
-[Updated] magnitude_regularizer=inf / ratios = (0.0|inf) / maxLc = 0.3068042993545532 / maxLcount = 0.3068042993545532
+[Updated] magnitude_regularizer=0.5277564525604248 / ratios = (1.07758367061615|4.85820198059082)
 
-[Updated] magnitude_regularizer=inf / ratios = (0.0|inf) / maxLc = 0.37094125151634216 / maxLcount = 0.37094125151634216
+minLc = 0.10984653234481812 / minLcount = 0.10984653234481812 / maxLc = 0.37622544169425964 / maxLcount = 0.37622544169425964[Updated] magnitude_regularizer=0.532859742641449 / ratios = (1.0730469226837158|5.883396148681641)
 
-[tuning step]   config : 
+minLc = 0.08273140341043472 / minLcount = 0.08273140341043472 / maxLc = 0.28573715686798096 / maxLcount = 0.28573715686798096[tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : inf
+        current_magnitude_regularizer : 0.532859742641449
         current_epoch : 24
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : inf
+        current_magnitude_regularizer : 0.532859742641449
         current_epoch : 24
         lenght data loader : 16
-        tuning every : 5 epochs 
-[Updated] magnitude_regularizer=inf / ratios = (0.0|inf) / maxLc = 0.26559507846832275 / maxLcount = 0.26559507846832275
+[Updated] magnitude_regularizer=0.5897555947303772 / ratios = (0.6338506937026978|11.811033248901367)
 
-Could not write culprit: 'int' object has no attribute 'item'
-[Updated] magnitude_regularizer=nan / ratios = (nan|inf) / maxLc = 0.3217639923095703 / maxLcount = 0.3217639923095703
+minLc = 0.07049514353275299 / minLcount = 0.07049514353275299 / maxLc = 0.28768235445022583 / maxLcount = 0.28768235445022583[Updated] magnitude_regularizer=0.5488948822021484 / ratios = (0.9546906352043152|3.318056106567383)
 
-[tuning step]   config : 
+minLc = 0.027858059853315353 / minLcount = 0.027858059853315353 / maxLc = 0.2891233563423157 / maxLcount = 0.2891233563423157[tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
+        current_magnitude_regularizer : 0.5488948822021484
         current_epoch : 29
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
+        current_magnitude_regularizer : 0.5488948822021484
         current_epoch : 29
         lenght data loader : 16
-        tuning every : 5 epochs 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.2731172442436218 / maxLcount = 0.2731172442436218
+[Updated] magnitude_regularizer=0.5752039551734924 / ratios = (0.9935753345489502|5.366023063659668)
 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.24145101010799408 / maxLcount = 0.24145101010799408
+minLc = 0.1317816823720932 / minLcount = 0.1317816823720932 / maxLc = 0.2592112123966217 / maxLcount = 0.2592112123966217[Updated] magnitude_regularizer=0.6050630807876587 / ratios = (0.7550128698348999|11.576408386230469)
 
-[tuning step]   config : 
+minLc = 0.1063070297241211 / minLcount = 0.1063070297241211 / maxLc = 0.30439379811286926 / maxLcount = 0.30439379811286926[tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
+        current_magnitude_regularizer : 0.5752039551734924
         current_epoch : 34
         lenght data loader : 16
-        tuning every : 5 epochs 
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
+        current_magnitude_regularizer : 0.5752039551734924
         current_epoch : 34
         lenght data loader : 16
-        tuning every : 5 epochs 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.2735482156276703 / maxLcount = 0.2735482156276703
+[Updated] magnitude_regularizer=0.6302195191383362 / ratios = (1.1536976099014282|10.999823570251465)
 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.3143619894981384 / maxLcount = 0.3143619894981384
+minLc = 0.13529923558235168 / minLcount = 0.13529923558235168 / maxLc = 0.27809521555900574 / maxLcount = 0.27809521555900574[Updated] magnitude_regularizer=0.6134626269340515 / ratios = (1.6143306493759155|7.187806606292725)
 
+minLc = 0.08552318811416626 / minLcount = 0.08552318811416626 / maxLc = 0.3797611892223358 / maxLcount = 0.3797611892223358[tuning step]   config : 
+        start_epoch : 4 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.6134626269340515
+        current_epoch : 39
+        lenght data loader : 16
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
+        current_magnitude_regularizer : 0.6134626269340515
         current_epoch : 39
         lenght data loader : 16
-        tuning every : 5 epochs 
+[Updated] magnitude_regularizer=0.6332578659057617 / ratios = (1.1933937072753906|3.992579936981201)
+
+minLc = 0.09931531548500061 / minLcount = 0.09931531548500061 / maxLc = 0.30416375398635864 / maxLcount = 0.30416375398635864[Updated] magnitude_regularizer=0.6799950003623962 / ratios = (0.4941195845603943|14.039285659790039)
+
+minLc = 0.10125067830085754 / minLcount = 0.10125067830085754 / maxLc = 0.23884688317775726 / maxLcount = 0.23884688317775726[tuning step]   config : 
+        start_epoch : 4 
+        transition_factor :  0.99 
+        current_magnitude_regularizer : 0.6332578659057617
+        current_epoch : 44
+        lenght data loader : 16
 [tuning step]   config : 
         start_epoch : 4 
         transition_factor :  0.99 
-        current_magnitude_regularizer : nan
-        current_epoch : 39
+        current_magnitude_regularizer : 0.6332578659057617
+        current_epoch : 44
         lenght data loader : 16
-        tuning every : 5 epochs 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.25795605778694153 / maxLcount = 0.25795605778694153
+[Updated] magnitude_regularizer=0.6584818959236145 / ratios = (0.5316826105117798|5.779636859893799)
 
-[Updated] magnitude_regularizer=nan / ratios = (nan|nan) / maxLc = 0.2537526488304138 / maxLcount = 0.2537526488304138
+minLc = 0.04371604323387146 / minLcount = 0.04371604323387146 / maxLc = 0.27846354246139526 / maxLcount = 0.27846354246139526[Updated] magnitude_regularizer=0.6855552792549133 / ratios = (0.3431149125099182|11.382884979248047)
 
+minLc = 0.06233102083206177 / minLcount = 0.06233102083206177 / maxLc = 0.2471158504486084 / maxLcount = 0.2471158504486084

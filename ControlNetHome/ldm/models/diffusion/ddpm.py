@@ -932,8 +932,8 @@ class LatentDiffusion(DDPM):
 
 
         # In scope temp copy for ControlLDM p_loss()
-        output_copy = model_output.detach()
-        x_noisy = x_noisy.detach()
+        output_copy = model_output.clone()  #.detach()
+        #x_noisy = x_noisy.detach()
 
 
         loss_dict = {}

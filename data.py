@@ -1,0 +1,699 @@
+#%%
+import os
+import sys 
+import torch
+import json
+import numpy as np 
+from PIL import Image 
+from typing import Union, Optional
+from torchvision.transforms.functional import rotate as tensor_rotate, hflip
+from torchvision.transforms import ToTensor, ToPILImage, Resize,InterpolationMode
+from einops import rearrange 
+
+from dataclasses import dataclass
+from scipy.io import loadmat
+from tqdm import tqdm 
+
+DEVICE = torch.device(0)
+BLIP_DEVICE = torch.device(0)
+ROOT_DIR_NWPU = '/net/vid-raxus/storage/deeplearning/datasets/nwpu/'
+ROOT_DIR_JHU = '/net/vid-raxus/storage/deeplearning/datasets/jhu/jhu_crowd_v2.0/'
+@dataclass
+class MapConfig :
+    include_box_size : bool = True
+    scale_gaussian : bool = True# true gaussian or not
+    save_as : str = 'Tensor'  #or 'PIL'
+    type : str = 'HeatMap'#'RGB'    #'RGB' or 'HeatMap' -> if Tensor then has dim 1,512,512 instead of 3,512,512. If set to False current version of model will not work (different control input)
+    save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/"#"/net/vid-raxus/storage/deeplearning/users/luk02485/control_net_expanded/"  #location to save processed maps
+    save_for : str = 'train' # or 'val' or 'test'
+    load_dir : str = "train/" # 'val' or 'test'
+    CSV_include_count : bool = False 
+    #max_resizing_factor : float = 0.1 # some pictures have either width or height smaller than 512 and we cannot extract 
+                                    # 512,512 smaller pictures from it. Lazily resizing a 400,1200 image of a high density crowd
+                                    # into a 512,512 image yields bad results. 
+
+config = MapConfig()
+
+# Change here for different save location of processed imgs and  densities
+if os.path.exists('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'):
+    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'
+else :
+    os.mkdir('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/')
+    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'
+
+
+
+def rotate_image(image : Union[Image.Image,torch.Tensor] , angle : float ) -> Union[Image.Image, torch.Tensor] :
+    try :
+        image = image.rotate(angle, expand = 1)
+    except AttributeError :
+        image = tensor_rotate(image, angle, expand = True)
+    return image 
+
+def largest_rotated_rect(w : float , h : float , angle : float ) -> tuple:
+    """
+    Given a rectangle of size wxh that has been rotated by 'angle' (in
+    radians), computes the width and height of the largest possible
+    axis-aligned rectangle within the rotated rectangle.
+
+    Original JS code by 'Andri' and Magnus Hoff from Stack Overflow
+    https://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders
+
+    Converted to Python by Aaron Snoswell
+    """
+
+    quadrant = int(np.floor(angle / (np.pi / 2))) & 3
+    sign_alpha = angle if ((quadrant & 1) == 0) else np.pi - angle
+    alpha = (sign_alpha % np.pi + np.pi) % np.pi
+
+    bb_w = w * np.cos(alpha) + h * np.sin(alpha)
+    bb_h = w * np.sin(alpha) + h * np.cos(alpha)
+
+    gamma = np.arctan(bb_w/ bb_w) if (w < h) else np.arctan(bb_w/ bb_w)
+
+    delta = np.pi - alpha - gamma
+
+    length = h if (w < h) else w
+
+    d = length * np.cos(alpha)
+    a = d * np.sin(alpha) / np.sin(delta)
+
+    y = a * np.cos(gamma)
+    x = y * np.tan(gamma)
+
+    return (
+        bb_w - 2 * x,
+        bb_h - 2 * y
+    )
+
+
+def crop_around_center(image : Union[Image.Image, torch.Tensor],
+    width : int , height : int ) -> Union[Image.Image, torch.Tensor]:
+    """
+    Given a PIL.Image or tensor with len.shape = 3, crops it to the given width and height,
+    around it's centre point
+    
+    Careful : if tensor, handles dimensions C, H, W whereas PIL.Image is W, H
+    
+    """
+    assert isinstance(image,Image.Image) or (len(image.shape) == 3 and image.shape[0] <= 3)
+    try :
+        image_size = (image.shape[1], image.shape[2])
+    except AttributeError :
+        image_size = (image.size[0], image.size[1])
+    image_center = (int(image_size[0] * 0.5), int(image_size[1] * 0.5))
+
+    if(width > image_size[0]):
+        width = image_size[0]
+
+    if(height > image_size[1]):
+        height = image_size[1]
+
+    x1 = int(image_center[0] - width * 0.5)
+    x2 = int(image_center[0] + width * 0.5)
+    y1 = int(image_center[1] - height * 0.5)
+    y2 = int(image_center[1] + height * 0.5)
+
+    try : 
+        image = image.crop((x1,y1,x2,y2))
+    except AttributeError :
+        image = image[:, x1:x2, y1:y2]
+
+    return image
+
+'''img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
+img_rot = rotate_image(img,35)
+
+image_rotated_cropped = crop_around_center(
+    img_rot,
+    *largest_rotated_rect(
+        img.size[0],
+        img.size[1],
+        np.deg2rad(35)
+    )
+)'''
+
+def get_dimensions(width: int, height: int, box_size: int = 512) -> list:
+    n_width, n_height = width // box_size, height // box_size
+    corners = []
+
+    for i in range(1, n_height + 1):
+        y_upper = (i - 1) * box_size 
+        y_lower = i * box_size     
+
+        for j in range(0, n_width):
+            x_left = j * box_size  
+            x_right = (j + 1) * box_size 
+            corners.append((x_left, y_upper, x_right, y_lower))
+
+    return corners
+
+def get_cropped_images(image : Union[Image.Image, torch.Tensor], box_size : int = 512) -> list :
+    '''
+    [WARNING] if image is a PIL.Image then will handle image as shape C, W, H.
+    If tensor and it has been converted from a PIL.Image, width and height will be exchanged
+    and so you have to make sure that image tensor also has shape C, W, H
+    '''
+    assert isinstance(image, Image.Image) or (len(image.shape) == 3 and image.shape[0] <= 3) 
+    try : 
+        size = image.shape[1:]
+    except AttributeError :
+        size = image.size 
+    corners = get_dimensions(size[0], size[1], box_size)
+    try :
+        cropped_images = [image.crop(coords) for coords in corners]
+    except AttributeError : 
+        cropped_images = list()
+        for coords in corners:
+            x1, y1, x2, y2 = coords    
+            cropped_images.append(image[:, x1:x2, y1:y2])
+    
+    if isinstance(image,torch.Tensor) :
+        cropped_images = [rearrange(im, 'C H W -> C W H') for im in cropped_images]
+    return cropped_images
+
+'''# Example call with previous functions :
+img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
+cropped_images = get_cropped_images(img)
+cropped_image =cropped_images[2]
+cropped_image_rot = rotate_image(cropped_image,45)
+image_rotated_cropped = crop_around_center(
+    cropped_image_rot,
+    *largest_rotated_rect(
+        cropped_image.size[0],
+        cropped_image.size[1],
+        np.deg2rad(45)
+    )
+)
+# for tensor :
+import matplotlib.pyplot as plt 
+img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
+totens = ToTensor()
+img = rearrange(totens(img), 'C H W -> C W H')
+cropped_images = get_cropped_images(img)
+cropped_image =cropped_images[2]
+cropped_image_rot = rotate_image(cropped_image,45)
+plt.imshow(cropped_image_rot.permute(1,2,0))
+image_rotated_cropped = crop_around_center(
+    cropped_image_rot,
+    *largest_rotated_rect(
+        cropped_image.shape[1],
+        cropped_image.shape[2],
+        np.deg2rad(45)
+    )
+)
+print(f'{image_rotated_cropped.shape=}')
+plt.imshow(image_rotated_cropped.permute(1,2,0))'''
+
+def density_map(config : MapConfig, 
+                points : list,
+                boxes  : list,
+                img_dim : tuple,
+                precision = torch.float32 ) -> torch.Tensor:
+
+    if config.type == 'RGB':
+        map = torch.zeros(3,img_dim[1],img_dim[0], device = DEVICE, dtype=precision)
+    elif config.type == 'HeatMap':
+        map =  torch.zeros(1,img_dim[1],img_dim[0], device = DEVICE, dtype=precision)
+    else :
+        print("Error: Invalid argument 'MapConfig.type' was provided. Choices are 'RGB' or 'HeatMap'. ")
+        sys.exit(1)
+
+    x = torch.arange(0, img_dim[1], dtype=precision, device = DEVICE )
+    y = torch.arange(0, img_dim[0], dtype=precision, device = DEVICE)
+    Y,X = torch.meshgrid(x, y)
+
+    if config.include_box_size:
+        if config.scale_gaussian:          
+           
+            for k,coord in enumerate(boxes) :
+                if len(boxes[k]) == 2 :
+                    var_x= max(4, coord[0])
+                    var_y= max(4, coord[1])
+                else :
+                    var_x = max(4, coord[2] - coord[0])
+                    var_y = max(4, coord[3] - coord[1])
+                
+                assert var_x > 0 and var_y > 0, f'found negative box size : ({var_x},{var_y}) - {boxes}'
+
+                scaler = 2*np.pi * np.sqrt(var_x*var_y)
+                gaussian = torch.exp(-((1/var_x)*(X - points[k][0])**2 + (1/var_y)*(Y - points[k][1])**2) / 2) / scaler
+                for c in range(map.shape[0]):
+                    map[c,:,:] += gaussian
+        else :
+            print(f'Else statement for config.scale_gaussian = {not config.scale_gaussian} not written as case not relevant anymore')
+            sys.exit(1)
+    else :
+        print(f'Else statement for config.include_box_size = {not config.include_box_size} not written as case not relevant anymore')
+        sys.exit(1)
+
+    if config.save_as == 'Tensor':
+        return map
+    elif config.save_as == 'PIL':
+        return ToPILImage()(map)  # NOT RECOMMENDED --> you will lose some points
+    else : 
+        print("Error: Invalid argument 'MapConfig.save_as' was provided. Choices are 'Tensor' or 'PIL'. ")
+        sys.exit(1)
+
+def spatial_content_nwpu(config : MapConfig
+                        , id : str) -> dict :
+
+    img_path = ROOT_DIR_NWPU+f'images/{id}.jpg'
+    try :
+        img = Image.open(img_path)
+        if img.mode != 'RGB' : 
+            return
+        elif img.mode == 'RGBA' :
+            background = Image.new('RGB', img.size, (255,255,255))
+            background.paste(img, mask=img.split()[3])
+    except :
+        print(f'Image with id : {id} does not exist at location : {img_path}')
+        return
+
+    try :
+        gt_path = ROOT_DIR_NWPU+f'jsons/{id}.json'
+        with open(gt_path, 'r') as file:
+                    data = json.load(file)
+                    points, boxes = data.pop('points'), data.pop('boxes')
+    except :
+        try :
+            gt_path = ROOT_DIR_NWPU+f'mats/{id}.mat'
+            mat = loadmat(gt_path)
+            points, boxes = mat.pop('annPoints'), mat.pop('annBoxes')
+        except FileNotFoundError :
+            print(f'No annotation  file (.json or .mat) exist for id :{id}')
+            return
+
+    dens = density_map(config = config,
+                        points=points,
+                        boxes = boxes,
+                        img_dim=img.size)
+
+    return dict(image = img, density = dens)   
+
+'''
+import matplotlib.pyplot as plt 
+config = MapConfig()
+x = spatial_content_nwpu(config, '2551')
+imgs = get_cropped_images(x['image']) # C W H (PIL.Image)
+dens = get_cropped_images(rearrange(x['density'], 'C H W -> C W H'))
+
+print(f'{x["image"].size=}')
+print(f'{x["density"].shape=}')
+
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+fig1, axs = plt.subplots(2,1, figsize = (10,10))
+axs[0].imshow(x['image'])
+axs[0].axis('off')
+axs[1].imshow(x['density'].squeeze(0))
+axs[1].axis('off')
+plt.show()
+
+fig, axs = plt.subplots(5, 2, figsize=(10, 15))
+for i in range(5):
+    # First column: images from list1
+    img1 =imgs[i]
+    axs[i, 0].imshow(img1) # if tensor then permute 1,2,0 before plotting
+    axs[i, 0].axis('off')  # Hide axis
+    
+    # Second column: images from list2
+    axs[i, 1].imshow(dens[i].squeeze(0))
+    axs[i, 1].axis('off')  # Hide axis
+
+plt.tight_layout()
+plt.show()
+
+img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
+totens = ToTensor()
+img = rearrange(totens(img), 'C H W -> C W H')
+cropped_images = get_cropped_images(img,725)
+for tensor in cropped_images :
+    cropped_image_rot = rotate_image(tensor,80)
+    print(cropped_image_rot.shape)
+    image_rotated_cropped = crop_around_center(
+        cropped_image_rot,
+        *largest_rotated_rect(
+            cropped_image.shape[1],
+            cropped_image.shape[2],
+            np.deg2rad(80)
+        )
+    )
+    plt.imshow(image_rotated_cropped.permute(1,2,0))
+    plt.show()
+'''
+#%%
+def extract_smaller_pairs(img : torch.Tensor, dens : torch.Tensor,
+ angles : Optional[list] = [45, -45, 90, -90, 135, -135, 180],
+ random_flip = True ,
+ minimal_density = None) -> list :
+
+    def is_empty(density : torch.Tensor) -> bool :
+        val = density.sum().item()
+        if val < minimal_density :
+            return True 
+        return False 
+    
+    def crop(img : torch.Tensor , dens : torch.Tensor ) -> tuple :
+        img = rearrange(img, 'C H W -> C W H')
+        icropped_512 = get_cropped_images(img,512) 
+        icropped_725 = get_cropped_images(img,725)  #725 is smallest dim of square s.t. for any rotation of angle in 0-90, a 512,512 square with x-axis aligned is contained in it.
+        dens = rearrange(dens, 'C H W -> C W H')
+        dcropped_512 = get_cropped_images(dens,512) 
+        dcropped_725 = get_cropped_images(dens,725)
+        return icropped_512, icropped_725, dcropped_512, dcropped_725
+    
+    #try :    
+    icropped_512, icropped_725, dcropped_512, dcropped_725 = crop(img, dens)
+    if not minimal_density :
+        minimal_density = dens.sum().item() / len(dcropped_725)
+
+    mask_512, mask_725 = torch.tensor([not is_empty(crop) for crop in dcropped_512]), torch.tensor([not is_empty(crop) for crop in dcropped_725])
+   
+    icropped_512, dcropped_512 = torch.stack(icropped_512)[mask_512], torch.stack(dcropped_512)[mask_512]
+    icropped_725, dcropped_725 = torch.stack(icropped_725)[mask_725], torch.stack(dcropped_725)[mask_725]
+     
+    if angles is None :
+        angles = np.random.uniform(low=5, high=180, size=5) + np.random.uniform(low=-180, high=5, size=5) 
+    rotation_list = list()
+
+    for k in range(len(icropped_725)):
+        img, dens = icropped_725[k], dcropped_725[k]
+        rotation_list.append( [
+            (crop_around_center(rotate_image(img,alph), 512, 512),
+            crop_around_center(rotate_image(dens,alph), 512, 512)
+            ) for alph in angles
+        ] )
+    rotation_list = [pair for rotated_pair_list in rotation_list for pair in rotated_pair_list] 
+
+    #apply mask a second time as rotating can remove all objects
+    rotation_list = [pair for pair in rotation_list if not is_empty(pair[1])]
+
+    for k in range(icropped_512.shape[0]) :
+        pair = icropped_512[k], dcropped_512[k]
+        rotation_list.append(pair)
+    
+    if random_flip :
+        prob_flip = np.random.uniform(low = 0, high = 1, size = len(rotation_list))
+        for k, p in enumerate(prob_flip) : 
+            if p > 0.5 :
+                rotation_list[k] = (hflip(rotation_list[k][0]), hflip(rotation_list[k][1]))
+    return rotation_list if len(rotation_list) != 0 else None
+
+'''x = spatial_content_nwpu(config, '2551')
+img = totens(x['image'])
+dens = x['density']
+out = extract_smaller_pairs(img,dens)
+
+for k in range(len(out)):
+    plt.imshow(out[k][0].permute(1,2,0))
+    plt.show()
+
+    plt.imshow(out[k][1].permute(1,2,0))
+    plt.show()
+    print(out[k][1].sum().item())
+'''
+
+def wrapper_extract_smaller_pairs(img : torch.Tensor, dens : torch.Tensor,
+ angles : Optional[list] = [45, -45, 90, -90, 135, -135, 180],
+ random_flip = True ,
+ minimal_density = None) -> list :
+ 
+    def adjust_dimensions(img, dens) :
+        size = max(img.shape[1],726), max(img.shape[2],726)
+        og_surface = dens.shape[1] * dens.shape[2]
+        new_surface = size[0] * size[1]
+        reshape = Resize(size=size, interpolation=InterpolationMode.NEAREST_EXACT)
+
+        img = reshape(img)
+        gaussian_scaler = og_surface / new_surface  
+        dens = reshape(dens) * gaussian_scaler
+
+        return img,dens 
+    copy_img = img.clone()
+    copy_dens = dens.clone()
+    if img.shape[1] <= 726 or img.shape[2] <= 726 :        
+        img, dens = adjust_dimensions(img, dens)
+        
+        split_image = extract_smaller_pairs(img, dens, angles, random_flip, minimal_density) 
+        if split_image :
+            return split_image
+    else :
+        split_image = extract_smaller_pairs(img, dens, angles, random_flip, minimal_density) 
+
+        if split_image :
+            return split_image
+
+        _, width, height = img.shape
+        top_crop = height // 6
+        bottom_crop = height - height // 6
+        img = img[:, top_crop:bottom_crop, :]
+        dens = dens[:, top_crop:bottom_crop, :]
+        if img.shape[1] <= 726 or img.shape[2] <= 726 :
+            img, dens = adjust_dimensions(img, dens)
+        split_image = extract_smaller_pairs(img, dens, angles, random_flip, minimal_density)
+        if split_image :
+            return split_image 
+    
+    #if the img is large dimension with few spreaded people :
+    try :
+        trial = extract_smaller_pairs(copy_img, copy_dens, angles, random_flip, minimal_density=10 )
+    except RuntimeError :
+        trial = extract_smaller_pairs(img, dens, angles, random_flip, minimal_density=10 )
+    if not trial :
+        try :
+            trial = extract_smaller_pairs(copy_img, copy_dens, angles, random_flip, minimal_density=1 )
+        except :
+            trial = extract_smaller_pairs(img, dens, angles, random_flip, minimal_density=1 )
+    return trial
+# %%    
+
+def spatial_content_jhu(config : MapConfig
+                        , id : str) -> dict :
+    img_path = f'{ROOT_DIR_JHU}{config.load_dir}images/{id}.jpg'
+    gt_path = f'{ROOT_DIR_JHU}{config.load_dir}gt/{id}.txt'
+
+    try :
+        img = Image.open(img_path)
+        if img.mode != 'RGB' : 
+            return
+        elif img.mode == 'RGBA' :
+            background = Image.new('RGB', img.size, (255,255,255))
+            background.paste(img, mask=img.split()[3])
+    except :
+        print(f'Image with id : {id} does not exist at location : {img_path}')
+        return
+
+    points = []
+    boxes = []
+    with open(gt_path, 'r') as file:
+        lines = file.readlines()
+        for line in lines:
+            x, y, w, h, o, b = map(int, line.split())
+            if o != 3: # not include occlusions
+                points.append([x, y])
+                boxes.append([w, h])
+
+    dens = density_map(config = config,
+                        points = points,
+                        boxes = boxes,
+                        img_dim=img.size)
+
+    return dict(image = img, density = dens)   
+# %%
+'''
+x = spatial_content_jhu(config, '0807') #3478 1344 3392 # Jhu 2059
+totens = ToTensor()
+img = totens(x['image'])
+dens = x['density']
+print(f'{dens.sum().item()=}')
+plt.imshow(x['image'])
+plt.show()
+out = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
+
+from transformers import BlipProcessor, BlipForConditionalGeneration
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to('cpu')
+input_ =  processor(x['image'], return_tensors = "pt").to('cpu')
+mout_ = model.generate(**input_)
+prompt_ = processor.decode(mout_[0], skip_special_tokens = True )
+print(f'{prompt_=}')
+for k in range(len(out)):
+    
+    plt.imshow(out[k][0].permute(1,2,0))
+    plt.show()
+    plt.imshow(out[k][1].permute(1,2,0))
+    plt.show()
+    print(f'{out[k][1].sum().item()}')
+    text = f'part of an photo of {prompt_} '
+    inputs = processor(ToPILImage()(out[k][0]),text = 'a photograph of ', return_tensors="pt").to('cpu')
+    mout = model.generate(**inputs, max_new_tokens = 10)
+    prompt = processor.decode(mout[0], skip_special_tokens=True)
+    print(f'{k=}, {prompt=}')
+'''
+def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 6) :
+    from transformers import BlipProcessor, BlipForConditionalGeneration
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(blip_device)
+    tensorize = ToTensor()
+    
+    id = f'{1:0{id_digit_range}d}'
+    largest_possible_id = ''.join(['9' for _ in range(id_digit_range)])
+
+    save_path = f'{config.save_dir}{config.save_for}'
+    print(f'{save_path=}')
+    try :
+        os.mkdir(save_path)
+        print(f'Created folder {save_path=}')
+    except FileExistsError :
+        pass
+    
+    img_path = f'{save_path}/img'
+    map_path = f'{save_path}/map'
+    try :
+        os.mkdir(img_path)
+    except FileExistsError :
+        pass 
+    try :
+        os.mkdir(map_path)
+    except FileExistsError :
+        pass 
+
+    labels = f'{save_path}/label.csv'
+    with open(labels, 'w') as file:
+        pass 
+
+    if config.save_as == 'Tensor' :
+        extension = 'pt'
+    elif config.save_as == 'PIL' :
+        extension = 'jpg'
+    else :
+        raise ValueError(f'Invalid {config.save_as=} passed. Choices are "Tensor" or "PIL". ')
+    
+    #TODO: handle case were sub directory test and val of jhu set does not exist
+    #search in jhu
+    jhu_images = f'{ROOT_DIR_JHU}{config.load_dir}images'
+    N = sum([1 for item in os.listdir(jhu_images) if os.path.isfile(os.path.join(jhu_images, item))])
+    bar = tqdm(total=N, desc='Processing...', unit='images')
+    print(f'Starting loading from JHU-set (total_images={N})')
+    for name in os.listdir(jhu_images) :
+        try :
+            id_,extension_ = name.split('.')
+        except ValueError :
+            continue
+        if extension_ != 'jpg' :
+            continue 
+        try :    
+            img, dens = spatial_content_jhu(config, id_).values()
+        except (ValueError, AttributeError)  :
+            continue    # spatial_content_jhu returned None
+        img = tensorize(img)
+        batch_pictures = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
+
+        if batch_pictures is None or len(batch_pictures) == 0:
+            print(f'(Found tricky image) {batch_pictures is None=}\n'
+                  f'{name=} from Jhu-set')
+            continue
+        for image,density in batch_pictures :
+
+            inputs = processor(ToPILImage()(image),text = 'a photograph of ', return_tensors="pt").to(blip_device)
+            out = model.generate(**inputs, max_new_tokens = 10)
+            prompt = processor.decode(out[0], skip_special_tokens=True)
+            
+            torch.save(image.cpu(),f'{save_path}/img/{id}.{extension}')
+            torch.save(density.cpu(),f'{save_path}/map/{id}.{extension}')
+            with open(labels, 'a') as file:
+                file.write(f'{id}.{extension}, {prompt}\n')
+
+            new_id = int(id) + 1
+            id = f'{new_id:0{id_digit_range}d}'
+            if id == largest_possible_id :
+                print(f'{largest_possible_id=} reached ! Cannot create new images from data - consider augmenting {id_digit_range=}. ')
+                bar.close()
+                return
+        bar.update(1)
+    bar.close()
+
+    #search in nwpu
+    nwpu_images = f'{ROOT_DIR_NWPU}images'
+    N = sum([1 for item in os.listdir(nwpu_images) if os.path.isfile(os.path.join(nwpu_images, item))])
+    bar = tqdm(total=N, desc='Processing...', unit='images')
+    print(f'Starting loading from NWPU-set (total_images={N})')
+    for name in os.listdir(nwpu_images) :
+        try :
+            id_,extension_ = name.split('.')
+        except ValueError :
+            continue
+        if extension_ != 'jpg' :
+            continue 
+        try :    
+            img, dens = spatial_content_nwpu(config, id_).values()
+        except (ValueError, AttributeError) :
+            continue    # spatial_content_nwpu returned None or extract no square out of image (latter is unlikely)
+
+        img = tensorize(img)
+        batch_pictures = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
+
+        if batch_pictures is None or len(batch_pictures) == 0:
+            print(f'(Found tricky image) {batch_pictures is None=}\n'
+                  f'{len(batch_pictures)=}\n'
+                  f'{name=} from NWPU-set')
+            continue
+        for image,density in batch_pictures :
+
+            inputs = processor(ToPILImage()(image),text = 'a photograph of ', return_tensors="pt").to(blip_device)
+            out = model.generate(**inputs, max_new_tokens = 10)
+            prompt = processor.decode(out[0], skip_special_tokens=True)
+            
+            torch.save(image.cpu(),f'{save_path}/img/{id}.{extension}')
+            torch.save(density.cpu(),f'{save_path}/map/{id}.{extension}')
+            with open(labels, 'a') as file:
+                file.write(f'{id}.{extension}, {prompt}\n')
+
+            new_id = int(id) + 1
+            id = f'{new_id:0{id_digit_range}d}'
+            if id == largest_possible_id :
+                print(f'{largest_possible_id=} reached ! Cannot create new images from data - consider augmenting {id_digit_range=}. ')
+                bar.close()
+                return
+        bar.update(1)
+    bar.close()
+
+#%%
+if __name__=="__main__" :
+    #TODO: verify if about to create files already image exist and skip otherwise   
+    create_data(config)
+
+# %%
+"""
+import matplotlib.pyplot as plt
+x = spatial_content_jhu(config, '0807') #3478 1344 3392 # Jhu 2059
+totens = ToTensor()
+img = totens(x['image'])
+dens = x['density']
+print(f'{dens.sum().item()=}')
+plt.imshow(x['image'])
+plt.show()
+out = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
+
+from transformers import BlipProcessor, BlipForConditionalGeneration
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to('cpu')
+input_ =  processor(x['image'], return_tensors = "pt").to('cpu')
+mout_ = model.generate(**input_)
+prompt_ = processor.decode(mout_[0], skip_special_tokens = True )
+print(f'{prompt_=}')
+for k in range(len(out)):
+    
+    plt.imshow(out[k][0].permute(1,2,0))
+    plt.show()
+    plt.imshow(out[k][1].permute(1,2,0))
+    plt.show()
+    print(f'{out[k][1].sum().item()}')
+    text = f'part of an photo of {prompt_} '
+    inputs = processor(ToPILImage()(out[k][0]),text = 'a photograph of ', return_tensors="pt").to('cpu')
+    mout = model.generate(**inputs, max_new_tokens = 10)
+    prompt = processor.decode(mout[0], skip_special_tokens=True)
+    print(f'{k=}, {prompt=}')
+"""

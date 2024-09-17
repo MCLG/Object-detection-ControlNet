@@ -36,7 +36,7 @@ class CounterWrapper(Baseline_Counter):
                  path_to_config = '/home/luk02485/development/ControlNet/STEERER/configs/JHU_final.py', 
                  device = 'cpu',
                  *args, **kwargs): #self, config=None,weight=200, route_size=(64,64),device=None):
-
+        print(" I AM BEING BORN INTO THIS WORLD *evil laughter* ")
         self.instantiate_from_config(kwargs)
         self.device = torch.device(device)
 
@@ -63,7 +63,6 @@ class CounterWrapper(Baseline_Counter):
         #symbolic method to replicate the loading of STEERER like stable diffusion
         pass
         
-
     def freeze(self):
         for param in  self.parameters():
             param.requires_grad =  False
@@ -73,8 +72,7 @@ class CounterWrapper(Baseline_Counter):
         super().to(device)
         self.device = device
         return self
-    
-    @torch.no_grad()
+
     def get_count(self, img: torch.Tensor, gaussians : Optional[list[torch.Tensor]] = None) -> Tuple[float,torch.Tensor]:
         '''
         output tensor of Tuple will be of dimension 1536, 2048 and should not be changed in order to preserve density informations.
@@ -117,3 +115,4 @@ class CounterWrapper(Baseline_Counter):
         pred_cnt = pre_den.sum().item()
 
         return pred_cnt,pre_den
+

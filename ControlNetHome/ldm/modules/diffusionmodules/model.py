@@ -7,6 +7,7 @@ from einops import rearrange
 from typing import Optional, Any
 
 from ldm.modules.attention import MemoryEfficientCrossAttention
+#from torch.utils.checkpoint import checkpoint
 
 try:
     import xformers
@@ -16,7 +17,6 @@ except:
     XFORMERS_IS_AVAILBLE = False
     print("No module 'xformers'. Proceeding without it.")
 
-#XFORMERS_IS_AVAILBLE = False
 
 def get_timestep_embedding(timesteps, embedding_dim):
     """
@@ -87,8 +87,11 @@ class Downsample(nn.Module):
             x = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
         return x
 
-
+#Modified
 class ResnetBlock(nn.Module):
+    '''
+    Entirity of forward() has been checkpointed (lazily) up to dropouts and batch/group norm layers.
+    '''
     def __init__(self, *, in_channels, out_channels=None, conv_shortcut=False,
                  dropout, temb_channels=512):
         super().__init__()
@@ -126,7 +129,58 @@ class ResnetBlock(nn.Module):
                                                     kernel_size=1,
                                                     stride=1,
                                                     padding=0)
+    def sequential_modules_call(self) :
+        # Careful not to include a dropout or batchnorm layer in *modules
+        def forward(h, temb) :
+            h = self.norm1(h)
+            h = nonlinearity(h)
+            h = self.conv1(h)
+            if temb is not None :
+                temb_out = self.temb_proj(nonlinearity(temb))[:, :, None, None]
+                h = h + temb_out
+            h = self.norm2(h)
+            h = nonlinearity(h)
 
+            return h
+        return forward 
+    
+    '''def temb_addition(self, *modules) :
+        # implements    h = h + self.temb_proj(nonlinearity(temb))[:,:,None,None]
+        def forward(*inputs):
+            h, temb = inputs
+            temb_out = modules[0](modules[1](temb))[:, :, None, None]
+            return h + temb_out 
+        return forward'''
+    """
+    def sequential_conv2_channels_handlers(self) :
+        def forward(x, h) :
+            h = self.conv2(h)
+            if self.in_channels != self.out_channels:
+                if self.use_conv_shortcut:
+                    x = self.conv_shortcut(x)   #ambiguous on what this layer consists of -> no checkpoint
+                else:  
+                    x = self.nin_shortcut(x)
+            return x + h
+        return forward 
+    
+    def forward(self, x, temb):
+        h = x
+
+        #checkpoint here 
+        #h = checkpoint(self.sequential_modules_call(), h, temb, use_reentrant=True)  # I have included norm1 which is a group normalization. Im not sure if this is recommended
+        h = self.dropout(h) # do not checkpoint dropouts 
+
+        #checkpoint  here
+        out = checkpoint(self.sequential_conv2_channels_handlers(), x, h, use_reentrant=True)
+        ''' try next ...
+         if self.in_channels != self.out_channels:
+            if self.use_conv_shortcut:
+                x = self.conv_shortcut(x)
+            else:
+                x = self.nin_shortcut(x)
+        '''
+        
+        return out"""
     def forward(self, x, temb):
         h = x
         h = self.norm1(h)
@@ -203,11 +257,14 @@ class AttnBlock(nn.Module):
 
         return x+h_
 
+#Modified
 class MemoryEfficientAttnBlock(nn.Module):
     """
         Uses xformers efficient implementation,
         see https://github.com/MatthieuTPHR/diffusers/blob/d80b531ff8060ec1ea982b65a1b8df70f73aa67c/src/diffusers/models/attention.py#L223
         Note: this is a single-head self-attention operation
+
+        Implemented with gradient checkpointing on the first 3 conv-layers
     """
     #
     def __init__(self, in_channels):
@@ -237,6 +294,28 @@ class MemoryEfficientAttnBlock(nn.Module):
                                         padding=0)
         self.attention_op: Optional[Any] = None
 
+    """def qkvBCHW(self) :
+    could have been used for checkpointing grad
+        def forward(h_) :
+            q = self.q(h_)
+            k = self.k(h_)
+            v = self.v(h_)
+
+            # compute attention
+            B, C, H, W = q.shape
+            q, k, v = map(lambda x: rearrange(x, 'b c h w -> b (h w) c'), (q, k, v))
+
+            q, k, v = map(
+                lambda t: t.unsqueeze(3)
+                .reshape(B, t.shape[1], 1, C)
+                .permute(0, 2, 1, 3)
+                .reshape(B * 1, t.shape[1], C)
+                .contiguous(),
+                (q, k, v),
+            )
+            return q,k,v, B, C, H, W
+        return forward """
+    
     def forward(self, x):
         h_ = x
         h_ = self.norm(h_)
@@ -256,6 +335,8 @@ class MemoryEfficientAttnBlock(nn.Module):
             .contiguous(),
             (q, k, v),
         )
+        #q, k, v, B, C, H, W = checkpoint(self.qkvBCHW(), h_, use_reentrant=True)
+
         out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=self.attention_op)
 
         out = (
@@ -288,7 +369,7 @@ def make_attn(in_channels, attn_type="vanilla", attn_kwargs=None):
         return AttnBlock(in_channels)
     elif attn_type == "vanilla-xformers":
         print(f"building MemoryEfficientAttnBlock with {in_channels} in_channels...")
-        return MemoryEfficientAttnBlock(in_channels)
+        return MemoryEfficientAttnBlock(in_channels)                                    #uses gradient checkpointing now !
     elif type == "memory-efficient-cross-attn":
         attn_kwargs["query_dim"] = in_channels
         return MemoryEfficientCrossAttentionWrapper(**attn_kwargs)
@@ -616,7 +697,7 @@ class Decoder(nn.Module):
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
-
+    
     def forward(self, z):
         #assert z.shape[1:] == self.z_shape[1:]
         self.last_z_shape = z.shape
@@ -628,9 +709,10 @@ class Decoder(nn.Module):
         h = self.conv_in(z)
 
         # middle
-        h = self.mid.block_1(h, temb)
-        h = self.mid.attn_1(h)
-        h = self.mid.block_2(h, temb)
+        #checkpoint here 
+        h = self.mid.block_1(h, temb)   #has checkpoints --> see ResNetBlock()
+        h = self.mid.attn_1(h)          #has checkpoints --> see MemoryEfficientAttentionLayer()
+        h = self.mid.block_2(h, temb)   #has checkpoints
 
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
@@ -644,7 +726,7 @@ class Decoder(nn.Module):
         # end
         if self.give_pre_end:
             return h
-
+        
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)

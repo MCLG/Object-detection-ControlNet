@@ -1,52 +1,39 @@
-#%%
+from torch import set_float32_matmul_precision, device
+from torch.cuda import set_device, empty_cache
+import sys
+import os.path as path
+
+gp = path.dirname(path.dirname(__file__))
+if gp not in sys.path :
+    sys.path.append(gp)
+
+steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
+if steerer_loc not in sys.path :
+    sys.path.append(steerer_loc)
+
+control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
+if control_loc not in sys.path :
+    sys.path.append(control_loc)
+
+from data_jhu import CrowdDataSetv2, MapConfig
+from data_nwpu import CrowdDataSet
+import sys 
+import pytorch_lightning as pl
+
+from torch.utils.data import DataLoader, ConcatDataset
+from ControlNetHome.cldm.logger import ImageLogger
+from ControlNetHome.cldm.model import create_model, load_state_dict, create_model_og, load_state_dict_og
+
+from inference import ckpt_search
+
+from pytorch_lightning.callbacks import DeviceStatsMonitor
+
 def main():
     
-    # To allow training with multiple GPU's from 'vid-moseisley', we need to set the CUDA_VISIBLE_DEVICES to the desired devices prior to importing pytorch.
-    # This excludes the device:0 as processes are always active on it and this prevents the pl.Trainer to star new processes, even when all models 
-    # and its submodules are initialized on the CPU.
-
     import os
-    #for multi-devices training, uncomment this :
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1,2,3' #choose here the GPUs you wish to work with
-    import torch
-
-    '''print(f'torch.cuda.device_count() : {torch.cuda.device_count()}\n')
-    for i in range(torch.cuda.device_count()):
-        print(f"Device-index {i}: {torch.cuda.get_device_name(i)}/ Device-name: {i+1}")
-        # Check no active process is running.
-        assert 'no processes are running' in torch.cuda.list_gpu_processes(i)
-        , f'there is an active process {torch.cuda.list_gpu_processes(i)} on {torch.cuda.get_device_name(i)}/Device-name:{i+1}'
-    '''
-
-    import sys
-    import os.path as path
-
-    gp = path.dirname(path.dirname(__file__))
-    if gp not in sys.path :
-        sys.path.append(gp)
-
-    steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
-    if steerer_loc not in sys.path :
-        sys.path.append(steerer_loc)
-
-    control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
-    if control_loc not in sys.path :
-        sys.path.append(control_loc)
-
-    from data_jhu import CrowdDataSetv2, MapConfig
-    from data_nwpu import CrowdDataSet
-    import sys 
-    import pytorch_lightning as pl
-
-
-    from torch.utils.data import DataLoader, ConcatDataset
-    from ControlNetHome.cldm.logger import ImageLogger
-    from ControlNetHome.cldm.model import create_model, load_state_dict
-
-    from inference import ckpt_search
-
-
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3' #choose here the GPUs you wish to work with
     # REQUIREMENTS AND LATEST PACKAGES FILE CHANGES
+
     '''
     INSTALLATION OF  CONDA FOR CONTROL NET
     xcontrol : https://github.com/lllyasviel/ControlNet/issues/612
@@ -116,36 +103,30 @@ def main():
     learning_rate = 2e-5#1e-5   SET TO PAPER VALUES
     sd_locked = True
     only_mid_control = False
-    AVAILABLE_GPU = [0,1]
+    AVAILABLE_GPU = [1,2]
 
-    model = create_model('./ControlNetHome/models/cldm_v15_2.yaml',location=None).cpu()
+    for gpu in AVAILABLE_GPU :    
+        set_device(device(gpu))
+    empty_cache()
 
-    interm = load_state_dict(resume_path, STEERER_path=STEERER_path,location=None)
+    model = create_model_og('./ControlNetHome/models/cldm_v15_2.yaml').cpu()
+    interm = load_state_dict_og(resume_path)
 
     model.load_state_dict(interm,strict = False)
     model.learning_rate = learning_rate
     model.sd_locked = sd_locked
     model.only_mid_control = only_mid_control
 
-    
-    # GPU fix to have counter and controlLDM on same device
-    #model.counter = model.counter.to(model.device)
-
-
-
     # Data        
     config = MapConfig()
 
     train_set = CrowdDataSetv2(config)
-
     confignwpu = MapConfig()
     confignwpu.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/control_nwpu/'
     nwpuset = CrowdDataSet(confignwpu)
-
     train_set = ConcatDataset([train_set,nwpuset])
-    train_loader = DataLoader(train_set, num_workers=16, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_set, num_workers=16, batch_size=batch_size, shuffle=True, pin_memory=True)
 
-    #config.load_dir = 'val'
     val_set = CrowdDataSetv2(config,set='val')
     val_loader = DataLoader(val_set, num_workers=16, persistent_workers=True ,batch_size=batch_size, shuffle=False)
 
@@ -154,20 +135,18 @@ def main():
           f'magnitude_regularizer={model.magnitude_regularizer}\n'
           f'start_epoch={model.smooth_magnitude_tuning_start}\n'
           f'transition_smoothness={model.magnitude_reg_previous_importance}\n'
-          f'tune every = {model.magnitude_every_x_epochs}\n'            # is determined by trainer check_val_every_n_epoch
-          )
-
-    torch.set_float32_matmul_precision('high')
+        )
+    
+    set_float32_matmul_precision('high')
     trainer = pl.Trainer(devices=AVAILABLE_GPU,accelerator="gpu", 
                         precision=32, 
-                        profiler='simple',
+                        profiler='advanced',
                         num_nodes=1,
                         strategy='ddp_find_unused_parameters_true',
                         limit_train_batches=200,
                         limit_val_batches=50,
-                        max_steps=8000,
+                        max_steps=9000,
                         check_val_every_n_epoch = 5,
-                        #callbacks=[logger],
                         accumulate_grad_batches= 4
                         )
 

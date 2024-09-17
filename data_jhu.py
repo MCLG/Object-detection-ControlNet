@@ -24,7 +24,7 @@ class MapConfig :
     save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/control_net_expanded/"  #location to save processed maps
     save_for : str = 'train' # or 'val' or 'test'
     load_dir : str = "train" # 'val' or 'test'
-    CSV_include_count : bool = True
+    CSV_include_count : bool = False 
 
 ROOT_DIR = "/net/vid-raxus/storage/deeplearning/datasets/jhu/jhu_crowd_v2.0/"
 DEVICE = torch.device('cpu')

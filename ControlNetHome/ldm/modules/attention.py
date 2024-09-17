@@ -16,8 +16,6 @@ try:
 except:
     XFORMERS_IS_AVAILBLE = False
 
-#XFORMERS_IS_AVAILBLE = False
-
 # CrossAttn precision handling
 import os
 _ATTN_PRECISION = os.environ.get("ATTN_PRECISION", "fp32")
@@ -215,7 +213,27 @@ class MemoryEfficientCrossAttention(nn.Module):
         self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
         self.attention_op: Optional[Any] = None
 
+    """def qkv(self) :
+        def forward(x, context) :
+            q = self.to_q(x)
+            context = default(context, x)
+            k = self.to_k(context)
+            v = self.to_v(context)
+
+            b, _, _ = q.shape
+            q, k, v = map(
+                lambda t: t.unsqueeze(3)
+                .reshape(b, t.shape[1], self.heads, self.dim_head)
+                .permute(0, 2, 1, 3)
+                .reshape(b * self.heads, t.shape[1], self.dim_head)
+                .contiguous(),
+                (q, k, v),
+            )
+            return q, k, v, b
+        return forward
+    """
     def forward(self, x, context=None, mask=None):
+
         q = self.to_q(x)
         context = default(context, x)
         k = self.to_k(context)
@@ -230,7 +248,6 @@ class MemoryEfficientCrossAttention(nn.Module):
             .contiguous(),
             (q, k, v),
         )
-
         # actually compute the attention, what we cannot get enough of
         out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=self.attention_op)
 

@@ -78,7 +78,6 @@ def create_model(config_path,location=None):
     return model
 
 # original functions
-''' 
 def load_state_dict_og(ckpt_path, location='cpu'):
     _, extension = os.path.splitext(ckpt_path)
     if extension.lower() == ".safetensors":
@@ -88,7 +87,7 @@ def load_state_dict_og(ckpt_path, location='cpu'):
         state_dict = get_state_dict(torch.load(ckpt_path, map_location=torch.device(location)))
     state_dict = get_state_dict(state_dict)
     print(f'Loaded state_dict from [{ckpt_path}]')
-    return state_dict'''
+    return state_dict
 
 
 def create_model_og(config_path):
