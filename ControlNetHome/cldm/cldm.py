@@ -30,15 +30,25 @@ except :
 
 import numpy as np
 import matplotlib.pyplot as plt
-import torchvision.transforms as T
+from torchvision.transforms import Resize, InterpolationMode
+from typing import List  
 
-# sampler needed to reconstruct images from noise 
-from cldm.ddim_hacked import DDIMSampler
+#for counting DDIM sampling
+from ldm.modules.diffusionmodules.util import extract_into_tensor
+from torch.nn.functional import interpolate
 from tqdm import tqdm
+import os 
 
 # Set STEERER here 
+from STEERER.lib.models.build_counter import freeze_model
 counter = None 
-counter_device = 0
+counter_device = "cpu"  #TODO : automatically assign to GPU with no active process --> handle then when multiple instances of STEERER are running 
+class STEERER_memory_alloc(nn.Module):
+    def __init__(self):
+        super(STEERER_memory_alloc, self).__init__()
+
+    def forward(self, x):
+        return x
 
 class ControlledUnetModel(UNetModel):
     def forward(self, x, timesteps=None, context=None, control=None, only_mid_control=False, **kwargs):
@@ -341,11 +351,13 @@ class ControlLDM(LatentDiffusion):
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
 
+        self.counter = STEERER_memory_alloc().to(self.device)
+        self.counter_dict = 'STEERER/nwpu_pre_trained.pth'
 
         # for hyperparameter tuning
-        self.register_buffer('magnitude_regularizer', torch.tensor(0.01)) #start value
-        self.smooth_magnitude_tuning_start = 4 #start epoch
-        self.magnitude_reg_previous_importance = 0.99    # 0 means the parameter will be updated to a completely new value at the end of each epoch.
+        self.register_buffer('magnitude_regularizer', torch.tensor(1.)) #start value
+        self.smooth_magnitude_tuning_start = 3 #start epoch. consider epoch count starts at 0 !
+        self.magnitude_reg_previous_importance = 0.8    # 0 means the parameter will be updated to a completely new value at the end of each epoch.
                                                         # a value of 1 means the parameter remains constant throughout training.
         assert self.magnitude_reg_previous_importance > 0 and self.magnitude_reg_previous_importance < 1, 'Invalid importance scaled passed for magnitude regularizer parameter. Range should be (0,1).'
         #self.magnitude_every_x_epochs = 1  
@@ -365,10 +377,12 @@ class ControlLDM(LatentDiffusion):
         progress = tqdm(total = len(val_dataloader))
         
         #kept for debugging : removing  after
-        error_save  =[[],[]]
+        #error_save  =[[],[]]
         #####################################
-        for _,batch in enumerate(val_dataloader):
-                
+        limit = int(len(val_dataloader)/2)
+        for k,batch in enumerate(val_dataloader):
+            if k == limit :
+                break
             x,c = self.get_input(batch, k='jpg',bs=None, dropout = False)
             t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
             if all( time < 400 for time in t) : 
@@ -377,14 +391,14 @@ class ControlLDM(LatentDiffusion):
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
 
-            Lc,Lcount = self.compute_loss( x, c, t, noise=None)[2:]
+            Lc,Lcount = self.compute_loss( x, c, t, noise=None, mode = 'val')[2:]
             Lc_over_Lcount.append(Lc / (Lcount))
             Lcount_over_Lc.append((Lcount)/Lc)
-            error_save[0].append(Lc)  #remove after debugging 
-            error_save[1].append(Lcount)#remove after debugging 
+            #error_save[0].append(Lc)  #remove after debugging 
+            #error_save[1].append(Lcount)#remove after debugging 
 
             progress.update(1)
-
+            '''
             #debugging section to find culprit batch :
             condition1 = Lc.item() >=  1e30 
             try : 
@@ -436,18 +450,18 @@ class ControlLDM(LatentDiffusion):
                 except Exception as e :
                     with open('tuning_config.txt', 'a') as file :
                         file.write(f'Could not write culprit: {str(e)}\n')
-
+            '''
         mean1 = (1/self.magnitude_regularizer) * torch.mean(torch.tensor(Lc_over_Lcount))
         mean2 = self.magnitude_regularizer * torch.mean(torch.tensor(Lcount_over_Lc))
 
         new_reg = 0.5*(mean1 + mean2)
         self.magnitude_regularizer = beta*self.magnitude_regularizer + (1-beta)*new_reg
 
-        infos = (f'[Updated] magnitude_regularizer={self.magnitude_regularizer} / ratios = ({mean1}|{mean2})\n')
+        infos = (f'[Updated] (NEW) magnitude_regularizer={self.magnitude_regularizer} / Lc/l*Lcount / l*Lcount/Lc = ({mean1}|{mean2})\n')
         print(infos)
         with open('tuning_config.txt', 'a') as file :
-                file.write(f'{infos}\n'
-                           f'minLc = {min(error_save[0])} / minLcount = {min(error_save[0])} / maxLc = {max(error_save[0])} / maxLcount = {max(error_save[0])}')
+                file.write(f'{infos}\n')
+                           #f'minLc = {min(error_save[0])} / minLcount = {min(error_save[0])} / maxLc = {max(error_save[0])} / maxLcount = {max(error_save[0])}')
         progress.close()
 
     @torch.no_grad()
@@ -464,38 +478,57 @@ class ControlLDM(LatentDiffusion):
                   f'        current_epoch : {self.current_epoch}\n'
                   f'        lenght data loader : {self.trainer.val_dataloaders.__len__()}\n'
                    )
-            print(infos)
             with open('tuning_config.txt', 'a') as file :
                 file.write(infos)
             
             self.tune_magnitude_regularizer(beta = self.magnitude_reg_previous_importance)
 
-    # Done to avoid double initialization from lightning.trainer and overloading cpu 
+    # Initialize STEERER when training
     def on_train_start(self) :
-        global counter 
-        if counter is None :
-            counter = CounterWrapper().to(counter_device)
-    
+
+        #uncomment for multiple device training :
+        counter_device = self.device
+
+        if isinstance(self.counter, STEERER_memory_alloc) :
+            print(f'loaded STEERER on {counter_device=}')
+            self.counter = CounterWrapper(path = self.counter_dict).to(counter_device)
+            freeze_model(self.counter)
+        
     def on_validation_start(self) :
-        global counter 
-        if counter is None :
-            counter = CounterWrapper().to(counter_device)
+        self.on_train_start()
     
     #modified function
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, dropout = True, *args, **kwargs):
+        '''
+        #get rid of this in the future :
+        must_include = ['man', 'men', 'woman', 'women', 'group', 'mass', 'mob', 'people', 'crowd', 
+                'human', 'person', 'highschooler', 'male', 'student', 'boy', 'girl', 
+                'son', 'daughter', 'father', 'mother', 'gathering', 'protest', 'run',
+                'race', 'parade', 'skier', 'team', 'game', 'stage', 'passenger', 'stadium', 
+                'fan', 'band','market','street', 'couple','audience', 'conference', 'marathon', 'lecture']
         
-        if dropout :    
+        batch['txt'] = [
+            (sentence if any(word in sentence for word in must_include) else '' )
+            for sentence in batch['txt']
+        ]
+        condition_met_count = sum([ not string for string in batch['txt']])
+        '''
+
+        if dropout :# and condition_met_count < int((len(batch['txt'])*0.2)) :    
             # 20% Dropout rate for promptless conditioning 
             for i in range(len(batch['txt'])):
                 if torch.rand(1) < 0.2 :
                     batch['txt'][i] = ''
-            
         x, c = super().get_input(batch, self.first_stage_key, *args, **kwargs)
         control = batch[self.control_key]
-
-        gaussian = batch['gaussian']
-
+        
+        #gaussian = batch['gaussian']
+        gaussian = control.detach().permute(0,3,1,2)
+        gaussian = Resize(size=(1536, 2048), 
+                          interpolation=InterpolationMode.NEAREST_EXACT)(gaussian)  
+        gaussian = gaussian * (512**2/(1536*2048))
+        
         if bs is not None:
             control = control[:bs]
             gaussian = gaussian[:bs]
@@ -619,9 +652,17 @@ class ControlLDM(LatentDiffusion):
 
     def decode_first_stage_train(self, z, predict_cids=False, force_not_quantize=False):
         z = 1. / self.scale_factor * z
+        '''try :
+            if self.trainer.validating :
+                return self.first_stage_model.decode(z)
+            elif self.trainer.training :
+                return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
+            else :
+                return self.first_stage_model.decode(z)
+        except RuntimeError :
+            return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)'''
         return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
-
-    def compute_loss(self, x_start, cond, t, noise=None, *args, **kwargs) :
+    def compute_loss(self, x_start, cond, t, noise=None, mode='train', *args, **kwargs) :
 
         #cloning to grad() as in setting y -> f(x) + g(x). Otherwise dict() is mutable (and tensor too ?), 
         # consequently we might end up in setting y -> f(x) + g(x') where x' is modified.
@@ -642,33 +683,35 @@ class ControlLDM(LatentDiffusion):
         eps_t = eps_t[indices]
         t = t[indices]
         gaussian = cond.pop('gaussian').to(self.device)[indices]
-
-        # reconstruct the images :
+        
+        # reconstruct images
         reconstructed = self.predict_reconstructed_from_noise(x_t=eps_t, t=t, noise = noise)
         reconstructed = self.decode_first_stage_train(reconstructed)
         reconstructed = enhance_tensor(reconstructed)
-
-        if len(reconstructed.shape) < 4 :
-            print(reconstructed.shape)
-
-        reconstructed = reconstructed.to(counter.device)
-        densities = counter.get_count(reconstructed)[1].to(self.device)
-
+        # get densities 
+        if self.device != self.counter.device :
+            reconstructed = reconstructed.to(self.counter.device)
+        densities = self.counter.get_count(reconstructed, mode = mode).to(self.device)
+        #compute loss
         L_count = torch.mean(torch.linalg.norm( densities - gaussian, ord = 'fro', dim = (2,3) )**2)
         loss = Lc + self.magnitude_regularizer*L_count
-
-        if self.global_step % 100 == 0 and self.current_epoch != 0:
+        
+        if self.global_step % 100 == 0 and self.trainer.training:
             recon = reconstructed.detach()
-            if len(recon.shape) == 3 :
-                recon = recon.cpu().permute(1,2,0)
-            elif len(recon.shape) == 4 :
-                recon = recon[0].squeeze(0).cpu().permute(1,2,0)
-
-            self.train_plot(recon,
-                            gaussian[0].detach().squeeze(0).cpu(),
-                            densities[0].detach().squeeze(0).cpu(),
-                            true_count=densities[0].sum().item(),
-                            t=t[0].detach())
+            recon = Resize(size=(1536, 2048), 
+                          interpolation=InterpolationMode.NEAREST_EXACT)(recon[:-2])
+            try :
+                if len(recon.shape) == 3 :
+                    recon = recon.cpu().permute(1,2,0)
+                elif len(recon.shape) == 4 :
+                    recon = recon[0].squeeze(0).cpu().permute(1,2,0)
+                self.train_plot(recon,
+                                gaussian[0].detach().squeeze(0).cpu(),
+                                densities[0].detach().squeeze(0).cpu(),
+                                true_count=densities[0].sum().item(),
+                                t=t[0].detach())
+            except :
+                pass    #TODO: get rid of this -> error can occur at "recon = recon[0].squeeze(0).cpu().permute(1,2,0)"
 
         log_prefix = 'train' if self.training else 'val'
         loss_dict.update({f'{log_prefix}/loss_simple': loss.mean()})
@@ -680,10 +723,13 @@ class ControlLDM(LatentDiffusion):
     
     def p_losses(self, x_start, cond, t, noise=None,*args, **kwargs) :
         
-        return self.compute_loss(x_start, cond, t, noise=None, *args, **kwargs)[:2]
+        return self.compute_loss(x_start, cond, t, noise=None, mode = 'train', *args, **kwargs)[:2]
 
     def train_plot(self, recon, gt, dens, true_count, t) :
 
+        name = f'./saves/grid-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
+        if os.path.exists(name) :
+            return 
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         axes[0].imshow(recon)
         axes[0].axis('off')
@@ -700,10 +746,148 @@ class ControlLDM(LatentDiffusion):
         fig.text(0.36, 0.02, f'true_count={true_count}(gt)|{round(gt.sum().item())}(comp.)', ha='center', fontsize=12)
         fig.text(0.73, 0.02, f'approximated_count={dens.sum().item()}', ha='center', fontsize=12)
 
-        plt.savefig(f'./saves/plot_combined_grid-{self.global_rank}-{self.current_epoch}-{self.global_step}.png', bbox_inches='tight')
+        plt.savefig(name, bbox_inches='tight')
         plt.show()
         plt.close('fig')
-    
+
+
+
+
+
+
+
+
+
+    def count_guided_sampling(self, map : torch.Tensor, prompt : List[str], gradient_scale : float =.1, denoising_steps : int = 50) -> torch.Tensor :
+        #may have to create a scheduler prior 
+        # rn noise is created from 64dim, maybe try 512dim
+        if isinstance(self.counter,STEERER_memory_alloc) :
+            self.on_train_start()
+        if len(map.shape) == 3 :
+            map = map.unsqueeze(0)
+            b=1
+        else :
+            assert map.shape[0] == len(prompt), f'Not enough prompts for maps given. Got {len(prompt)}, expected {map.shape[0]}. '
+            b = map.shape[0]
+        assert self.device == self.counter.device, f'This method requires both models to be on the same device for grad computation. '
+        #TODO: figure out permutation for gaussians ---> occurs in get_batch
+        gaussian = map.detach()#.permute(0,3,1,2)
+        gaussian = Resize(size=(1536, 2048), 
+                          interpolation=InterpolationMode.NEAREST_EXACT)(gaussian)  
+        gaussian = gaussian * (512**2/(1536*2048))
+        print(f'{gaussian.shape=}')
+        noise = default(None, lambda: torch.randn_like(torch.zeros(1,4,64,64), device = self.device))
+        timesteps = reversed([t for t in range(1,denoising_steps)])
+        batch = {'jpg' : torch.zeros(b,512,512,3), 'txt' : prompt, 'hint' : map}
+        _, txt_encoded = super().get_input(batch, self.first_stage_key)
+        #map = einops.rearrange(map, 'b h w c -> b c h w')
+        map = map.to(memory_format=torch.contiguous_format).float()
+        cond = dict(c_crossattn=[txt_encoded], c_concat=[map])
+        
+        x_noisy = noise 
+        for ts in timesteps :
+            t = torch.full((b,), ts, device=self.device, dtype=torch.long)
+            with torch.no_grad() :
+                eps_t, x_noisy = super().p_losses(x_noisy,cond,t,noise)[2:]
+                t_reconstr = self.predict_reconstructed_from_noise(x_t=eps_t,t=t,noise=x_noisy)
+                t_reconstr = self.decode_first_stage(t_reconstr) 
+                t_reconstr = enhance_tensor(t_reconstr)
+            xt = t_reconstr.clone().detach().requires_grad_(True)
+            #xt.retain_grad_()
+            del t_reconstr
+            print(f'prior resize{xt.shape=}, {xt.requires_grad=}')
+            
+
+            ymap = self.counter.get_count(interpolate(xt, size=(1536,2048), mode = 'nearest'), mode='train')
+            #ymap.retain_grad()
+            print(f'{ymap.requires_grad=}')
+            #print(f'{ymap.shape=}')
+            diff = gaussian - ymap
+            print(f'{diff.shape=}')
+            norm = torch.linalg.norm(diff, ord = 'fro', dim = (2,3))**2
+            print(f'{norm.shape=}')
+            L_count = torch.linalg.norm( gaussian - ymap, ord = 'fro', dim = (2,3) )**2
+            L_count = L_count.squeeze(1)
+            print(f'{L_count.shape=}')
+            #score = -torch.autograd.grad(outputs=L_count, inputs=t_reconstr, create_graph=True, is_grads_batched=True, retain_graph=True)[0]
+            print(f'{xt.requires_grad=}')
+            L_count.backward()
+            #print(f'{ymap.grad=}, {max(ymap.grad)=}')
+            score = -xt.grad
+            print(f'{score=}')
+
+            alpha = gradient_scale*(denoising_steps-t)/denoising_steps
+            eps_t = eps_t - alpha*extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, score.shape)*score
+            x_noisy = self.guide_denoised(x_noisy, t, eps_t)
+            
+        return x_noisy
+        '''
+        Usage : 
+        from torch import set_float32_matmul_precision, device
+        from torch.cuda import set_device, empty_cache
+        import sys
+        import os.path as path
+
+        gp = path.dirname(path.dirname(__file__))
+        if gp not in sys.path :
+            sys.path.append(gp)
+
+        steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
+        if steerer_loc not in sys.path :
+            sys.path.append(steerer_loc)
+
+        control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
+        if control_loc not in sys.path :
+            sys.path.append(control_loc)
+
+        #from data_jhu import CrowdDataSetv2, MapConfig
+        #from data_nwpu import CrowdDataSet
+        from data import CCNetSet, MapConfig
+        import sys 
+        import pytorch_lightning as pl
+        from pytorch_lightning.strategies import DDPStrategy
+        from datetime import timedelta
+
+        from torch.utils.data import DataLoader, random_split#ConcatDataset
+        from ControlNetHome.cldm.logger import ImageLogger
+        from ControlNetHome.cldm.model import create_model, load_state_dict, create_model_og, load_state_dict_og
+
+        from inference import ckpt_search
+
+        from pytorch_lightning.callbacks import DeviceStatsMonitor
+        import os
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+
+        resume_path = ckpt_search()
+        model = create_model_og('./ControlNetHome/models/cldm_v15_2.yaml').cpu()
+        interm = load_state_dict_og(resume_path)
+        model.load_state_dict(interm,strict = False)
+        model = model.to(0)
+
+        import einops as ei
+        import torch 
+        map = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/0041828.pt',map_location= torch.device(0))
+        image = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/img/0041828.pt',map_location=torch.device(0))
+        prompt = ['a photograph of a crowd of people with flowers']
+        print(f'{map.shape=}')
+        sample = model.count_guided_sampling(map=map,prompt=prompt)
+        '''
+    def guide_denoised(self, x_t : torch.tensor, t : int, eps : torch.tensor) -> torch.tensor :
+        # self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod)))
+        #self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod)))
+        cumratio = extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * extract_into_tensor(self.sqrt_alphas_cumprod, t-1, x_t.shape)
+        denoised_x_t = torch.sqrt(
+            x_t - extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape) * eps
+        )
+        guided_eps_t = torch.sqrt(
+             extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t-1, x_t.shape) * eps
+        )
+        return cumratio*denoised_x_t + guided_eps_t
+
+
+
+
+
 
 def gradient_skip(function) :
     '''

@@ -1,11 +1,10 @@
-#%%
 import os
 import sys 
 import torch
 import json
 import numpy as np 
 from PIL import Image 
-from typing import Union, Optional
+from typing import Union, Optional, List
 from torchvision.transforms.functional import rotate as tensor_rotate, hflip
 from torchvision.transforms import ToTensor, ToPILImage, Resize,InterpolationMode
 from einops import rearrange 
@@ -13,35 +12,115 @@ from einops import rearrange
 from dataclasses import dataclass
 from scipy.io import loadmat
 from tqdm import tqdm 
+from torch.utils.data import Dataset
 
-DEVICE = torch.device(0)
-BLIP_DEVICE = torch.device(0)
+'''
+(READ BEFORE USING)
+Assumes the following file ordering :
+    For NWPU (strict):
+        ROOT_DIR_NWPU
+            mats/
+            jsons/
+            images/
+    For JHU :
+        ROOT_DIR_JHU
+            train/
+                gt/
+                    (contains .txt files)
+                image_labels.txt
+                images/
+                    (contains .jpg)
+            val/
+                (idem)
+            test/
+                (idem)
+
+        Alternatively, you can set MapConfig.load_dir='' and organize as 
+        ROOT_DIR_NWPU
+            gt/
+                (contains .txt files)
+            image_labels.txt
+            images/
+                (contains .jpg)
+What this file does :
+    generates density map from images of crowds from the JHU and NWPU set.  Any dataset should work aswell, as long as the above mentioned structure is respected.
+    Will also crop all images to multiple smaller 512,512 images while checking that objects are located on the cropped images. This is to avoid the creation of irrelevant images.
+    The point of this procedure is to significantly augment the size of the data.
+    If for a jpg, no crop contains sufficient amount of objects,, we lower the required density of each crop and redo the procedure. If this does not work, we found a #tricky# image and print the id of that image.    
+'''
+DEVICE = torch.device(0)    #device for map generation and imag splitting
+BLIP_DEVICE = torch.device(0)   #device for caption
 ROOT_DIR_NWPU = '/net/vid-raxus/storage/deeplearning/datasets/nwpu/'
 ROOT_DIR_JHU = '/net/vid-raxus/storage/deeplearning/datasets/jhu/jhu_crowd_v2.0/'
+
 @dataclass
 class MapConfig :
-    include_box_size : bool = True
-    scale_gaussian : bool = True# true gaussian or not
-    save_as : str = 'Tensor'  #or 'PIL'
-    type : str = 'HeatMap'#'RGB'    #'RGB' or 'HeatMap' -> if Tensor then has dim 1,512,512 instead of 3,512,512. If set to False current version of model will not work (different control input)
-    save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/"#"/net/vid-raxus/storage/deeplearning/users/luk02485/control_net_expanded/"  #location to save processed maps
-    save_for : str = 'train' # or 'val' or 'test'
-    load_dir : str = "train/" # 'val' or 'test'
-    CSV_include_count : bool = False 
-    #max_resizing_factor : float = 0.1 # some pictures have either width or height smaller than 512 and we cannot extract 
-                                    # 512,512 smaller pictures from it. Lazily resizing a 400,1200 image of a high density crowd
-                                    # into a 512,512 image yields bad results. 
+    include_box_size : bool = False  #if false, all objects have fixed variance (4,4)
+    scale_gaussian : bool = True    # true gaussian or not. DO NOT CHANGE
+    save_as : str = 'Tensor'        #or 'PIL'. DO NOT CHANGE
+    type : str = 'HeatMap'          #'RGB' resulting control dimension will be 1,512,512 or 'HeatMap' for control dimension 3,512,512. DO NOT CHANGE 
+    
+    #change here for different save directory
+    save_dir : str = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/"  #location to save processed data
+    
+    save_for : str = 'train'        # or 'val' or 'test'. In use but not needed. creates a sub_directory 'save_for' in which processed data is stored.
+    load_dir : str = "train/"       # 'val/' or 'test/'. Only relevant for JHU set. Set to '' for other data sets but respect the above mentioned folder structure.
 
 config = MapConfig()
+if __name__ == '__main__':
+    if not os.path.exists(config.save_dir):
+        os.mkdir(config.save_dir)
 
-# Change here for different save location of processed imgs and  densities
-if os.path.exists('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'):
-    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'
-else :
-    os.mkdir('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/')
-    config.save_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/'
+class CCNetSet(Dataset):
+    
+    def __init__(self, img_dir, map_dir, csv_loc):
+        self.img_dir = img_dir
+        self.map_dir = map_dir
+        self.data = self.csv2dict(csv_loc)       
 
+    def __len__(self):
+        return len(self.data)
 
+    def __getitem__(self, idx):
+        item = self.data[idx]
+
+        source_path = os.path.join(self.map_dir, item["id"])
+        target_path = os.path.join(self.img_dir, item["id"])
+
+        source = torch.permute(torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
+        target = torch.permute(torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
+        target = target - 1 #input to range [-1,1]
+        #source = source.permute(2,1,0)
+        #target = target.permute(2,1,0)
+
+        prompt = item['prompt']
+        return dict(jpg=target, txt=prompt, hint=source)
+    
+    def csv2dict(self, csv_loc) -> List[dict]:
+        from csv import DictReader 
+        data = []
+        assert csv_loc[-4:] =='.csv', f'{csv_loc=} not leading to a .csv file'
+        
+        with open(csv_loc, mode='r', newline='') as csvfile:
+            csv_reader = DictReader(csvfile)
+            for row in csv_reader:
+                data.append(row)
+        
+        return data
+    
+    def display(self, idx) :
+        import matplotlib.pyplot as plt 
+        jpg, prompt, source = self.__getitem__(idx).values()
+        fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+
+        #scale to range [0,1]
+        jpg = (jpg+1)/2
+
+        axes[0].imshow(jpg.cpu())
+        axes[1].imshow(source.cpu())
+        fig.text(0.25, 0.05, prompt , ha='center', fontsize=12)
+
+        plt.show()
 
 def rotate_image(image : Union[Image.Image,torch.Tensor] , angle : float ) -> Union[Image.Image, torch.Tensor] :
     try :
@@ -121,18 +200,6 @@ def crop_around_center(image : Union[Image.Image, torch.Tensor],
 
     return image
 
-'''img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
-img_rot = rotate_image(img,35)
-
-image_rotated_cropped = crop_around_center(
-    img_rot,
-    *largest_rotated_rect(
-        img.size[0],
-        img.size[1],
-        np.deg2rad(35)
-    )
-)'''
-
 def get_dimensions(width: int, height: int, box_size: int = 512) -> list:
     n_width, n_height = width // box_size, height // box_size
     corners = []
@@ -172,39 +239,6 @@ def get_cropped_images(image : Union[Image.Image, torch.Tensor], box_size : int 
         cropped_images = [rearrange(im, 'C H W -> C W H') for im in cropped_images]
     return cropped_images
 
-'''# Example call with previous functions :
-img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
-cropped_images = get_cropped_images(img)
-cropped_image =cropped_images[2]
-cropped_image_rot = rotate_image(cropped_image,45)
-image_rotated_cropped = crop_around_center(
-    cropped_image_rot,
-    *largest_rotated_rect(
-        cropped_image.size[0],
-        cropped_image.size[1],
-        np.deg2rad(45)
-    )
-)
-# for tensor :
-import matplotlib.pyplot as plt 
-img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
-totens = ToTensor()
-img = rearrange(totens(img), 'C H W -> C W H')
-cropped_images = get_cropped_images(img)
-cropped_image =cropped_images[2]
-cropped_image_rot = rotate_image(cropped_image,45)
-plt.imshow(cropped_image_rot.permute(1,2,0))
-image_rotated_cropped = crop_around_center(
-    cropped_image_rot,
-    *largest_rotated_rect(
-        cropped_image.shape[1],
-        cropped_image.shape[2],
-        np.deg2rad(45)
-    )
-)
-print(f'{image_rotated_cropped.shape=}')
-plt.imshow(image_rotated_cropped.permute(1,2,0))'''
-
 def density_map(config : MapConfig, 
                 points : list,
                 boxes  : list,
@@ -221,30 +255,30 @@ def density_map(config : MapConfig,
 
     x = torch.arange(0, img_dim[1], dtype=precision, device = DEVICE )
     y = torch.arange(0, img_dim[0], dtype=precision, device = DEVICE)
-    Y,X = torch.meshgrid(x, y)
+    Y,X = torch.meshgrid(x, y, indexing='ij')
 
-    if config.include_box_size:
-        if config.scale_gaussian:          
-           
-            for k,coord in enumerate(boxes) :
+    if config.scale_gaussian:          
+        
+        for k,coord in enumerate(boxes) :
+            if config.include_box_size :
+                    
                 if len(boxes[k]) == 2 :
                     var_x= max(4, coord[0])
                     var_y= max(4, coord[1])
                 else :
                     var_x = max(4, coord[2] - coord[0])
                     var_y = max(4, coord[3] - coord[1])
-                
-                assert var_x > 0 and var_y > 0, f'found negative box size : ({var_x},{var_y}) - {boxes}'
+            else :
+                var_x, var_y = 4, 4
 
-                scaler = 2*np.pi * np.sqrt(var_x*var_y)
-                gaussian = torch.exp(-((1/var_x)*(X - points[k][0])**2 + (1/var_y)*(Y - points[k][1])**2) / 2) / scaler
-                for c in range(map.shape[0]):
-                    map[c,:,:] += gaussian
-        else :
-            print(f'Else statement for config.scale_gaussian = {not config.scale_gaussian} not written as case not relevant anymore')
-            sys.exit(1)
+            assert var_x > 0 and var_y > 0, f'found negative box size : ({var_x},{var_y}) - {boxes}'
+
+            scaler = 2*np.pi * np.sqrt(var_x*var_y)
+            gaussian = torch.exp(-((1/var_x)*(X - points[k][0])**2 + (1/var_y)*(Y - points[k][1])**2) / 2) / scaler
+            for c in range(map.shape[0]):
+                map[c,:,:] += gaussian
     else :
-        print(f'Else statement for config.include_box_size = {not config.include_box_size} not written as case not relevant anymore')
+        print(f'Else statement for config.scale_gaussian = {not config.scale_gaussian} not written as case not relevant anymore')
         sys.exit(1)
 
     if config.save_as == 'Tensor':
@@ -401,20 +435,6 @@ def extract_smaller_pairs(img : torch.Tensor, dens : torch.Tensor,
                 rotation_list[k] = (hflip(rotation_list[k][0]), hflip(rotation_list[k][1]))
     return rotation_list if len(rotation_list) != 0 else None
 
-'''x = spatial_content_nwpu(config, '2551')
-img = totens(x['image'])
-dens = x['density']
-out = extract_smaller_pairs(img,dens)
-
-for k in range(len(out)):
-    plt.imshow(out[k][0].permute(1,2,0))
-    plt.show()
-
-    plt.imshow(out[k][1].permute(1,2,0))
-    plt.show()
-    print(out[k][1].sum().item())
-'''
-
 def wrapper_extract_smaller_pairs(img : torch.Tensor, dens : torch.Tensor,
  angles : Optional[list] = [45, -45, 90, -90, 135, -135, 180],
  random_flip = True ,
@@ -501,38 +521,8 @@ def spatial_content_jhu(config : MapConfig
                         img_dim=img.size)
 
     return dict(image = img, density = dens)   
-# %%
-'''
-x = spatial_content_jhu(config, '0807') #3478 1344 3392 # Jhu 2059
-totens = ToTensor()
-img = totens(x['image'])
-dens = x['density']
-print(f'{dens.sum().item()=}')
-plt.imshow(x['image'])
-plt.show()
-out = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
 
-from transformers import BlipProcessor, BlipForConditionalGeneration
-processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to('cpu')
-input_ =  processor(x['image'], return_tensors = "pt").to('cpu')
-mout_ = model.generate(**input_)
-prompt_ = processor.decode(mout_[0], skip_special_tokens = True )
-print(f'{prompt_=}')
-for k in range(len(out)):
-    
-    plt.imshow(out[k][0].permute(1,2,0))
-    plt.show()
-    plt.imshow(out[k][1].permute(1,2,0))
-    plt.show()
-    print(f'{out[k][1].sum().item()}')
-    text = f'part of an photo of {prompt_} '
-    inputs = processor(ToPILImage()(out[k][0]),text = 'a photograph of ', return_tensors="pt").to('cpu')
-    mout = model.generate(**inputs, max_new_tokens = 10)
-    prompt = processor.decode(mout[0], skip_special_tokens=True)
-    print(f'{k=}, {prompt=}')
-'''
-def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 6) :
+def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 7) :
     from transformers import BlipProcessor, BlipForConditionalGeneration
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
     model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(blip_device)
@@ -562,7 +552,7 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
 
     labels = f'{save_path}/label.csv'
     with open(labels, 'w') as file:
-        pass 
+        file.write('id,prompt\n')
 
     if config.save_as == 'Tensor' :
         extension = 'pt'
@@ -596,6 +586,10 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
                   f'{name=} from Jhu-set')
             continue
         for image,density in batch_pictures :
+            
+            #rotating tensors may have rotated objects out of frame --> assures we have no false positives
+            if density.sum().item() < 1 :
+                continue
 
             inputs = processor(ToPILImage()(image),text = 'a photograph of ', return_tensors="pt").to(blip_device)
             out = model.generate(**inputs, max_new_tokens = 10)
@@ -605,6 +599,7 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
             torch.save(density.cpu(),f'{save_path}/map/{id}.{extension}')
             with open(labels, 'a') as file:
                 file.write(f'{id}.{extension}, {prompt}\n')
+            bar.set_postfix({'id': id})
 
             new_id = int(id) + 1
             id = f'{new_id:0{id_digit_range}d}'
@@ -637,19 +632,22 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
 
         if batch_pictures is None or len(batch_pictures) == 0:
             print(f'(Found tricky image) {batch_pictures is None=}\n'
-                  f'{len(batch_pictures)=}\n'
                   f'{name=} from NWPU-set')
             continue
         for image,density in batch_pictures :
 
-            inputs = processor(ToPILImage()(image),text = 'a photograph of ', return_tensors="pt").to(blip_device)
-            out = model.generate(**inputs, max_new_tokens = 10)
+            if density.sum().item() < 10 :
+                continue
+            
+            inputs = processor(ToPILImage()(image),text = 'a photograph of a crowd of people', return_tensors="pt").to(blip_device)
+            out = model.generate(**inputs, max_new_tokens = 20)
             prompt = processor.decode(out[0], skip_special_tokens=True)
             
             torch.save(image.cpu(),f'{save_path}/img/{id}.{extension}')
             torch.save(density.cpu(),f'{save_path}/map/{id}.{extension}')
             with open(labels, 'a') as file:
                 file.write(f'{id}.{extension}, {prompt}\n')
+            bar.set_postfix({'id': id})
 
             new_id = int(id) + 1
             id = f'{new_id:0{id_digit_range}d}'
@@ -662,38 +660,34 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
 
 #%%
 if __name__=="__main__" :
-    #TODO: verify if about to create files already image exist and skip otherwise   
+    #TODO: verify if about to create files already image exist and skip otherwise 
+    print(f'{config=}')  
     create_data(config)
 
-# %%
-"""
-import matplotlib.pyplot as plt
-x = spatial_content_jhu(config, '0807') #3478 1344 3392 # Jhu 2059
-totens = ToTensor()
-img = totens(x['image'])
-dens = x['density']
-print(f'{dens.sum().item()=}')
-plt.imshow(x['image'])
-plt.show()
-out = wrapper_extract_smaller_pairs(img,dens, minimal_density = None)
+'''
+we have fake positives 
+fold1 = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/map" 
+fold2 = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/img"
+csv_path = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/label.csv"
+import csv
+content = []
+with open(csv_path, mode = 'r',newline='') as csvfile :
+    csv_reader = csv.DictReader(csvfile)
+    for row in csv_reader :
+        content.append(row)
+fake_pos = []
+for k,name in enumerate(os.listdir(fold1)):
+    tenspath = os.path.join(fold1,name)
+    map = torch.load(tenspath)
+    if map.sum().item()<1 :
+        print(f'{content[k].values()=}')
+        print(f'{name=}')
+        fake_pos.append(name)
 
-from transformers import BlipProcessor, BlipForConditionalGeneration
-processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to('cpu')
-input_ =  processor(x['image'], return_tensors = "pt").to('cpu')
-mout_ = model.generate(**input_)
-prompt_ = processor.decode(mout_[0], skip_special_tokens = True )
-print(f'{prompt_=}')
-for k in range(len(out)):
-    
-    plt.imshow(out[k][0].permute(1,2,0))
-    plt.show()
-    plt.imshow(out[k][1].permute(1,2,0))
-    plt.show()
-    print(f'{out[k][1].sum().item()}')
-    text = f'part of an photo of {prompt_} '
-    inputs = processor(ToPILImage()(out[k][0]),text = 'a photograph of ', return_tensors="pt").to('cpu')
-    mout = model.generate(**inputs, max_new_tokens = 10)
-    prompt = processor.decode(mout[0], skip_special_tokens=True)
-    print(f'{k=}, {prompt=}')
-"""
+#total fake positives = 23222
+#total new data points = 128384
+#~ 20 % of the data
+
+content = {id : prmpt for line in content for id,prmpt in line.items()}
+
+'''

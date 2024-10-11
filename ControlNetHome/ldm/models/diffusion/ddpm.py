@@ -176,9 +176,10 @@ class DDPM(pl.LightningModule):
         self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod)))
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
-        # NEW:
+        # (NEW) calculations for counting guided ddim sampling:
         self.register_buffer('sqrt_one_minus_alphas_cumprod_divided_alphas_cumprod', to_torch(np.sqrt((1-alphas_cumprod) / alphas_cumprod)))
         
+
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (
                 1. - alphas_cumprod) + self.v_posterior * betas

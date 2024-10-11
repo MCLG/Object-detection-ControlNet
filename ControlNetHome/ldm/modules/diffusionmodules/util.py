@@ -154,7 +154,6 @@ class CheckpointFunction(torch.autograd.Function):
         del output_tensors
         return (None, None) + input_grads
 
-
 def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
     """
     Create sinusoidal timestep embeddings.
