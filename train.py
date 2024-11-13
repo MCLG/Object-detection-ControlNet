@@ -96,8 +96,9 @@ def main():
     import os
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3' #choose here the GPUs you wish to work with
     print(f'CUDA_VISIBLE_DEVICES={os.environ["CUDA_VISIBLE_DEVICES"]}')
+    #os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:16"
+    AVAILABLE_GPU = [3]
 
-    AVAILABLE_GPU = [1,2]
     if len(AVAILABLE_GPU) > 1 :
         # setting the DDP env variables according to doc https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html 
         os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "0"
@@ -136,6 +137,19 @@ def main():
         )
         set_device(dist.get_rank())
 
+    try:
+        resume_path = ckpt_search()
+    except : 
+        resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'#'./saves/checkpoints/crowdnet_dict-epoch-60.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
+
+    #STEERER_path = '/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth'
+    #resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'
+    batch_size = 2#16
+    logger_freq = 300
+    learning_rate = 2e-5#   SET TO PAPER VALUES
+    sd_locked = True
+    only_mid_control = False
+
     # load data
     Data = CCNetSet('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/img',
             '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map',
@@ -144,34 +158,23 @@ def main():
     train_loader = DataLoader(train, num_workers=8, batch_size=batch_size, shuffle=True, pin_memory=True)
     val_loader = DataLoader(val, num_workers=8, persistent_workers=False ,batch_size=batch_size, shuffle=False)
 
-    try:
-        resume_path = ckpt_search()
-    except : 
-        resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'#'./saves/checkpoints/crowdnet_dict-epoch-60.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
-
-    #STEERER_path = '/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth'
-    resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'
-    batch_size = 10#16
-    logger_freq = 300
-    learning_rate = 2e-5#   SET TO PAPER VALUES
-    sd_locked = True
-    only_mid_control = False
-
     #for gpu in AVAILABLE_GPU :    
     #    set_device(device(gpu))
     #empty_cache()
 
     #changed persistent_workers to False and reduced workers to 4
     #TODO: read https://pytorch.org/docs/stable/data.html to solve timeout issue
+
     #training strategy :
-    accumulate_grad_batches = 6#12 for 2 devices
+    accumulate_grad_batches = 32#12 for 2 devices
     nb_training_data = train.__len__()
     nb_val_data = val.__len__()
-    max_train_per_epoch = int(nb_training_data/ (batch_size*accumulate_grad_batches)-1)
-    max_val_per_epoch = int(nb_val_data/ (batch_size*accumulate_grad_batches)-1)
+    max_train_per_epoch = 3200#int(nb_training_data/ (accumulate_grad_batches))
+    max_val_per_epoch = 64
     check_val_every_n_epoch = 4
     accumulation_steps = 10000
-
+    smooth_magnitude_tuning_start = 9 #start epoch (validation epoch). consider epoch count starts at 0 !
+    magnitude_reg_previous_importance = 0.8 
     #load model
     model = create_model_og('./ControlNetHome/models/cldm_v15_2.yaml').cpu()
     interm = load_state_dict_og(resume_path)
@@ -213,6 +216,9 @@ def main():
         )
     else :
         strat = "auto"
+    
+    model.smooth_magnitude_tuning_start = smooth_magnitude_tuning_start
+    model.magnitude_reg_previous_importance = magnitude_reg_previous_importance
 
     print(f'[TRAINING CONFIG] \n'
           '     loss balancing :\n'
@@ -253,8 +259,6 @@ if __name__ == '__main__':
 #https://github.com/Lightning-AI/pytorch-lightning/pull/3514/files
 
 #%%
-
-
 
 # sample procedure :
 '''

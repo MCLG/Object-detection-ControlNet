@@ -37,7 +37,7 @@ pip3 install dict_recursive_update
 pip3 install yacs
 ```
 
-7) For STEERER to work, you need to download the weights _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main
+7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file.
 
 ### Additional warnings that may occur:
  If upon  initializing the model

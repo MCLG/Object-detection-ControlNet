@@ -74,14 +74,16 @@ class CounterWrapper(Baseline_Counter):
         return self(img,labels = labels, mode = mode)
 
     def get_count(self, img : torch.Tensor, mode = 'val') -> torch.Tensor :
+        # assumes format B,C,H,W of input image
         
         assert len(img.shape) > 2, f'input {img.shape=} but requires RGB 3,H,W or MAP 1,H,W shape of input tensor. '
+
+        if len(img.shape) == 3 :
+            img = img.unsqueeze(0).to(self.device)
 
         if img.shape[-2:] != torch.Size([1536,2048]):
             img = interpolate(img, size = (1536,2048), mode='bicubic')
         
-        if len(img.shape) == 3 :
-            img = img.unsqueeze(0).to(self.device)
 
         if mode == 'val' :
             with torch.no_grad():

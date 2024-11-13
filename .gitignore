@@ -13,6 +13,24 @@ STEERER/JHU_mae_54.5_mse_240.6.pth
 
 old_conda_configs/*
 
+CGsamples/
+lightning_logs/
+nccl_err_logs/
+OT/
+test_jsons/
+boxplot-100-MSE_for-MAE_fro.png
+data_jhu.py 
+data_nwpu.py 
+debbug.py 
+debbug_log.txt 
+epsplots/
+inference.py 
+scrap.py 
+test.py 
+train_log.txt 
+tuning_config.txt
+
+
 # gitignore from STEERER
 # created by virtualenv automatically
 /__pycache__/*

@@ -1,208 +1,120 @@
 [tuning step]   config : 
-        start_epoch : 0 
+        start_epoch : 9 
         transition_factor :  0.8 
         current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 0 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 0 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 0 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 0 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 0 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 0
-        lenght data loader : 1061
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 3
-        lenght data loader : 796
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 3
-        lenght data loader : 796
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 3
-        lenght data loader : 796
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.0
-        current_epoch : 3
-        lenght data loader : 796
-[Updated] (NEW) magnitude_regularizer=1.070115089416504 / Lc/l*Lcount / l*Lcount/Lc = (1.766984462738037|0.934166669845581)
-
-[Updated] (NEW) magnitude_regularizer=1.074605941772461 / Lc/l*Lcount / l*Lcount/Lc = (1.8921164274215698|0.8539435863494873)
+        current_epoch : 9
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=1.4973602294921875 / Lc/l*Lcount / l*Lcount/Lc = (4.2003583908081055|2.7732436656951904)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.074605941772461
-        current_epoch : 3
-        lenght data loader : 796
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.074605941772461
-        current_epoch : 3
-        lenght data loader : 796
-[Updated] (NEW) magnitude_regularizer=1.1312460899353027 / Lc/l*Lcount / l*Lcount/Lc = (1.7780060768127441|0.9376068711280823)
-
-[Updated] (NEW) magnitude_regularizer=1.1249550580978394 / Lc/l*Lcount / l*Lcount/Lc = (1.6132245063781738|1.0394787788391113)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.1312460899353027
-        current_epoch : 3
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.1693910360336304 / Lc/l*Lcount / l*Lcount/Lc = (1.5956918001174927|1.0482498407363892)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.1693910360336304
-        current_epoch : 7
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.1980820894241333 / Lc/l*Lcount / l*Lcount/Lc = (1.5465929508209229|1.0791000127792358)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.1980820894241333
-        current_epoch : 11
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2201625108718872 / Lc/l*Lcount / l*Lcount/Lc = (1.489682912826538|1.1272854804992676)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2201625108718872
-        current_epoch : 15
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.235850214958191 / Lc/l*Lcount / l*Lcount/Lc = (1.4641175270080566|1.1330846548080444)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.235850214958191
+        current_magnitude_regularizer : 1.4973602294921875
         current_epoch : 19
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2493783235549927 / Lc/l*Lcount / l*Lcount/Lc = (1.4173905849456787|1.1895909309387207)
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=1.8987445831298828 / Lc/l*Lcount / l*Lcount/Lc = (2.784984827041626|4.223577976226807)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2493783235549927
-        current_epoch : 23
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2576055526733398 / Lc/l*Lcount / l*Lcount/Lc = (1.3830792903900146|1.1979498863220215)
+        current_magnitude_regularizer : 1.8987445831298828
+        current_epoch : 29
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.3004984855651855 / Lc/l*Lcount / l*Lcount/Lc = (2.3848495483398438|5.430179119110107)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2576055526733398
-        current_epoch : 27
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.26534903049469 / Lc/l*Lcount / l*Lcount/Lc = (1.431532859802246|1.161112904548645)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.26534903049469
-        current_epoch : 31
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.272200345993042 / Lc/l*Lcount / l*Lcount/Lc = (1.4048980474472046|1.1943122148513794)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.272200345993042
-        current_epoch : 35
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.277516484260559 / Lc/l*Lcount / l*Lcount/Lc = (1.3903106451034546|1.2072510719299316)
-
-[tuning step]   config : 
-        start_epoch : 3 
-        transition_factor :  0.8 
-        current_magnitude_regularizer : 1.277516484260559
+        current_magnitude_regularizer : 2.3004984855651855
         current_epoch : 39
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2774773836135864 / Lc/l*Lcount / l*Lcount/Lc = (1.3832916021347046|1.1713504791259766)
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.657130479812622 / Lc/l*Lcount / l*Lcount/Lc = (2.0283679962158203|6.138948440551758)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2774773836135864
-        current_epoch : 43
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2762478590011597 / Lc/l*Lcount / l*Lcount/Lc = (1.3362046480178833|1.2064540386199951)
+        current_magnitude_regularizer : 2.657130479812622
+        current_epoch : 49
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.9875895977020264 / Lc/l*Lcount / l*Lcount/Lc = (1.5284950733184814|7.090354919433594)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2762478590011597
-        current_epoch : 47
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2740029096603394 / Lc/l*Lcount / l*Lcount/Lc = (1.3486080169677734|1.181437373161316)
+        current_magnitude_regularizer : 2.657130479812622
+        current_epoch : 9
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.555835485458374 / Lc/l*Lcount / l*Lcount/Lc = (2.4247701168060303|1.8765383958816528)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2740029096603394
-        current_epoch : 51
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2789767980575562 / Lc/l*Lcount / l*Lcount/Lc = (1.4124984741210938|1.1852458715438843)
+        current_magnitude_regularizer : 2.555835485458374
+        current_epoch : 19
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.4144043922424316 / Lc/l*Lcount / l*Lcount/Lc = (2.2812469005584717|1.4161138534545898)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2789767980575562
-        current_epoch : 55
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2769441604614258 / Lc/l*Lcount / l*Lcount/Lc = (1.3401308059692383|1.197495937347412)
+        current_magnitude_regularizer : 2.4144043922424316
+        current_epoch : 29
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.3265976905822754 / Lc/l*Lcount / l*Lcount/Lc = (2.1491353511810303|1.801605463027954)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2769441604614258
+        current_magnitude_regularizer : 2.3265976905822754
+        current_epoch : 39
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.312422513961792 / Lc/l*Lcount / l*Lcount/Lc = (2.7722206115722656|1.739222764968872)
+
+[tuning step]   config : 
+        start_epoch : 9 
+        transition_factor :  0.8 
+        current_magnitude_regularizer : 2.312422513961792
+        current_epoch : 49
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.2434048652648926 / Lc/l*Lcount / l*Lcount/Lc = (2.2893226146698|1.6453452110290527)
+
+[tuning step]   config : 
+        start_epoch : 9 
+        transition_factor :  0.8 
+        current_magnitude_regularizer : 2.2434048652648926
         current_epoch : 59
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2829031944274902 / Lc/l*Lcount / l*Lcount/Lc = (1.4430416822433472|1.170437216758728)
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.208888053894043 / Lc/l*Lcount / l*Lcount/Lc = (2.5211293697357178|1.6205133199691772)
 
 [tuning step]   config : 
-        start_epoch : 3 
+        start_epoch : 9 
         transition_factor :  0.8 
-        current_magnitude_regularizer : 1.2829031944274902
-        current_epoch : 63
-        lenght data loader : 1591
-[Updated] (NEW) magnitude_regularizer=1.2801170349121094 / Lc/l*Lcount / l*Lcount/Lc = (1.353893756866455|1.1840509176254272)
+        current_magnitude_regularizer : 2.208888053894043
+        current_epoch : 69
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.2071800231933594 / Lc/l*Lcount / l*Lcount/Lc = (2.5301425457000732|1.8705523014068604)
+
+[tuning step]   config : 
+        start_epoch : 9 
+        transition_factor :  0.8 
+        current_magnitude_regularizer : 2.2071800231933594
+        current_epoch : 79
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.204456329345703 / Lc/l*Lcount / l*Lcount/Lc = (2.697497844696045|1.689624309539795)
+
+[tuning step]   config : 
+        start_epoch : 9 
+        transition_factor :  0.8 
+        current_magnitude_regularizer : 2.204456329345703
+        current_epoch : 89
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.1498019695281982 / Lc/l*Lcount / l*Lcount/Lc = (2.531402349472046|1.3309675455093384)
+
+[tuning step]   config : 
+        start_epoch : 9 
+        transition_factor :  0.8 
+        current_magnitude_regularizer : 2.1498019695281982
+        current_epoch : 99
+        lenght data loader : 7954
+[Updated] (NEW) magnitude_regularizer=2.148857593536377 / Lc/l*Lcount / l*Lcount/Lc = (2.6503589153289795|1.6398015022277832)
 

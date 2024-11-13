@@ -273,7 +273,7 @@ def density_map(config : MapConfig,
 
             assert var_x > 0 and var_y > 0, f'found negative box size : ({var_x},{var_y}) - {boxes}'
 
-            scaler = 2*np.pi * np.sqrt(var_x*var_y)
+            scaler = 2*np.pi * np.sqrt(var_x*var_y) 
             gaussian = torch.exp(-((1/var_x)*(X - points[k][0])**2 + (1/var_y)*(Y - points[k][1])**2) / 2) / scaler
             for c in range(map.shape[0]):
                 map[c,:,:] += gaussian

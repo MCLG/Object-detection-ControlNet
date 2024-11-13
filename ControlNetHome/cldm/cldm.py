@@ -31,13 +31,17 @@ except :
 import numpy as np
 import matplotlib.pyplot as plt
 from torchvision.transforms import Resize, InterpolationMode
-from typing import List  
+from typing import List, Optional  
 
 #for counting DDIM sampling
 from ldm.modules.diffusionmodules.util import extract_into_tensor
 from torch.nn.functional import interpolate
 from tqdm import tqdm
 import os 
+from torch.nn.functional import mse_loss 
+
+#plots 
+from CGsampling_plotter import sample as CG_plot_sample
 
 # Set STEERER here 
 from STEERER.lib.models.build_counter import freeze_model
@@ -354,15 +358,17 @@ class ControlLDM(LatentDiffusion):
         self.counter = STEERER_memory_alloc().to(self.device)
         self.counter_dict = 'STEERER/nwpu_pre_trained.pth'
 
-        # for hyperparameter tuning
-        self.register_buffer('magnitude_regularizer', torch.tensor(1.)) #start value
-        self.smooth_magnitude_tuning_start = 3 #start epoch. consider epoch count starts at 0 !
+        # for hyperparameter tuning (not in use)
+        self.register_buffer('magnitude_regularizer', torch.tensor(1.2)) #start value
+        self.smooth_magnitude_tuning_start = 10 #start epoch. consider epoch count starts at 0 !
         self.magnitude_reg_previous_importance = 0.8    # 0 means the parameter will be updated to a completely new value at the end of each epoch.
                                                         # a value of 1 means the parameter remains constant throughout training.
         assert self.magnitude_reg_previous_importance > 0 and self.magnitude_reg_previous_importance < 1, 'Invalid importance scaled passed for magnitude regularizer parameter. Range should be (0,1).'
-        #self.magnitude_every_x_epochs = 1  
+        #self.magnitude_every_x_epochs = 1 
 
-    ######################################################################################################
+        #regularizing coefficients :
+        self.lambda_Cmse = torch.tensor(1000000)
+        self.lambda_Ccount = torch.tensor(.001)
     
     @torch.no_grad()
     def tune_magnitude_regularizer(self,beta):
@@ -370,35 +376,40 @@ class ControlLDM(LatentDiffusion):
         This is done by going through all 50 validation batches. See README.md for details.
         This computes the training loss so a step is faster than a regular validation step (ddim sampling).
         '''
+        import numpy as np
         val_dataloader = self.trainer.val_dataloaders
-
+        limit = 1280 #because 64(BS) * 10 * 2 we wnat to go through the equivalent of 2x10 accumulation steps
+        
         Lc_over_Lcount = []
         Lcount_over_Lc = []
-        progress = tqdm(total = len(val_dataloader))
+        progress = tqdm(total = limit)
         
         #kept for debugging : removing  after
         #error_save  =[[],[]]
         #####################################
-        limit = int(len(val_dataloader)/2)
         for k,batch in enumerate(val_dataloader):
             if k == limit :
                 break
             x,c = self.get_input(batch, k='jpg',bs=None, dropout = False)
             t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
-            if all( time < 400 for time in t) : 
+            if all([ time < 400 for time in t]) : 
                 continue                 
             if self.shorten_cond_schedule:  # TODO: drop this option
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
 
             Lc,Lcount = self.compute_loss( x, c, t, noise=None, mode = 'val')[2:]
-            Lc_over_Lcount.append(Lc / (Lcount))
-            Lcount_over_Lc.append((Lcount)/Lc)
+            if Lc == 0 or Lcount == 0 :
+                continue 
+            Lc_over_Lcount.append(Lc / Lcount)
+            Lcount_over_Lc.append(Lcount/Lc)
             #error_save[0].append(Lc)  #remove after debugging 
             #error_save[1].append(Lcount)#remove after debugging 
 
             progress.update(1)
-            '''
+            
+
+
             #debugging section to find culprit batch :
             condition1 = Lc.item() >=  1e30 
             try : 
@@ -450,9 +461,13 @@ class ControlLDM(LatentDiffusion):
                 except Exception as e :
                     with open('tuning_config.txt', 'a') as file :
                         file.write(f'Could not write culprit: {str(e)}\n')
-            '''
-        mean1 = (1/self.magnitude_regularizer) * torch.mean(torch.tensor(Lc_over_Lcount))
+            
+
+
+        mean1 = (1/self.magnitude_regularizer) * torch.mean(torch.tensor( Lc_over_Lcount))
         mean2 = self.magnitude_regularizer * torch.mean(torch.tensor(Lcount_over_Lc))
+        '''mean1 = (1/self.magnitude_regularizer) * torch.mean(torch.tensor(Lc_over_Lcount))
+        mean2 = self.magnitude_regularizer * torch.mean(torch.tensor(Lcount_over_Lc))'''
 
         new_reg = 0.5*(mean1 + mean2)
         self.magnitude_regularizer = beta*self.magnitude_regularizer + (1-beta)*new_reg
@@ -466,31 +481,42 @@ class ControlLDM(LatentDiffusion):
 
     @torch.no_grad()
     def on_validation_epoch_end(self):
-        '''
-        perform the regularizer step for the hyperparameter that scales the L_count loss to
-        the same magnitude as the usual DM loss.
-        '''
-        if self.current_epoch >= self.smooth_magnitude_tuning_start :
-            infos = (f'[tuning step]   config : \n'
-                  f'        start_epoch : {self.smooth_magnitude_tuning_start} \n'
-                  f'        transition_factor :  {self.magnitude_reg_previous_importance} \n'
-                  f'        current_magnitude_regularizer : {self.magnitude_regularizer}\n'
-                  f'        current_epoch : {self.current_epoch}\n'
-                  f'        lenght data loader : {self.trainer.val_dataloaders.__len__()}\n'
-                   )
-            with open('tuning_config.txt', 'a') as file :
-                file.write(infos)
-            
-            self.tune_magnitude_regularizer(beta = self.magnitude_reg_previous_importance)
+        
+        #perform count guidance sampling with same image for reproducibility
+        id = '0055870'
+        control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/{id}.pt',map_location = self.device)
+        control_map = torch.unsqueeze(control_map,0)
+        sampling_data_csv = 'temp_sampling_process.csv'
+        denoising_steps = 1000
+        with torch.enable_grad():
+            sample = self.count_guided_sampling(control_map,
+                prompt = ['a photograph of a crowd of people holding flags'], 
+                denoising_steps = denoising_steps, 
+                progress_track = sampling_data_csv)
+        
+        sample = enhance_tensor(sample)
+        sample_loc = f'./saves/CG_sample-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
+        graph_loc = f'./saves/CG_graph-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
+        CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
+
+        fig, axis = plt.subplots(1,2, figsize=(12,6))
+        axis[0].imshow(control_map.squeeze(0).permute(2,1,0).cpu())
+        axis[0].axis('off')
+        axis[1].imshow(sample.squeeze(0).permute(2,1,0).cpu())
+        axis[1].axis('off')
+        plt.savefig(sample_loc, bbox_inches='tight', pad_inches=0)
+        plt.close()
 
     # Initialize STEERER when training
     def on_train_start(self) :
-
+        
+        assert self.magnitude_reg_previous_importance > 0 and self.magnitude_reg_previous_importance < 1, 'Invalid importance scaled passed for magnitude regularizer parameter. Range should be (0,1).'
+        
         #uncomment for multiple device training :
         counter_device = self.device
 
         if isinstance(self.counter, STEERER_memory_alloc) :
-            print(f'loaded STEERER on {counter_device=}')
+            print(f'loaded {self.counter_dict} on STEERER on device={counter_device}')
             self.counter = CounterWrapper(path = self.counter_dict).to(counter_device)
             freeze_model(self.counter)
         
@@ -662,40 +688,115 @@ class ControlLDM(LatentDiffusion):
         except RuntimeError :
             return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)'''
         return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
+    
     def compute_loss(self, x_start, cond, t, noise=None, mode='train', *args, **kwargs) :
+
+        def time_scale(t,T=400, alpha=.1) :
+            '''
+            assigns high weight for t close to 0 and 1 to close to 400
+            '''
+            if t >= T :
+                return 1.
+            return alpha*(T-t)/T + 1.
 
         #cloning to grad() as in setting y -> f(x) + g(x). Otherwise dict() is mutable (and tensor too ?), 
         # consequently we might end up in setting y -> f(x) + g(x') where x' is modified.
-        x_ = x_start.clone()
+        x_0 = x_start.clone()
 
         if noise is None :
             noise = default(noise, lambda: torch.randn_like(x_start))
-        Lc, loss_dict, eps_t, x_t = super().p_losses(x_, cond, t ,noise)
+        Lc, loss_dict, eps_t, x_t = super().p_losses(x_0, cond, t ,noise)
 
-        # fetch t>400 for counting loss
-        mask = t > 400
+        # fetch t<400 for counting loss. Paper says t>400 but this is logically wrong !!!
+        mask = t < 400
         if all(not x for x in mask) :
             return Lc, loss_dict, Lc, torch.tensor(0)
         indices = mask.nonzero(as_tuple = True)[0]
 
         noise = noise[indices]
         x_start = x_start[indices]
+        x_t = x_t[indices]
         eps_t = eps_t[indices]
         t = t[indices]
         gaussian = cond.pop('gaussian').to(self.device)[indices]
-        
+
         # reconstruct images
-        reconstructed = self.predict_reconstructed_from_noise(x_t=eps_t, t=t, noise = noise)
+        reconstructed = self.predict_reconstructed_from_noise(x_t=x_t, t=t, noise = eps_t)#self.predict_reconstructed_from_noise(x_t=eps_t, t=t, noise = noise)
+        #check for gradient tracking (remove in future)
+        if self.trainer.training :
+            assert reconstructed.requires_grad, '1'
         reconstructed = self.decode_first_stage_train(reconstructed)
+        #check for gradient tracking (remove in future)
+        if self.trainer.training :
+            assert reconstructed.requires_grad, '2'
         reconstructed = enhance_tensor(reconstructed)
+        #check for gradient tracking (remove in future)
+        if self.trainer.training :
+            assert reconstructed.requires_grad, '3'
         # get densities 
         if self.device != self.counter.device :
             reconstructed = reconstructed.to(self.counter.device)
         densities = self.counter.get_count(reconstructed, mode = mode).to(self.device)
+        #check for gradient tracking (remove in future)
+        if self.trainer.training :
+            assert densities.requires_grad
         #compute loss
-        L_count = torch.mean(torch.linalg.norm( densities - gaussian, ord = 'fro', dim = (2,3) )**2)
-        loss = Lc + self.magnitude_regularizer*L_count
+
+        #TODO : try mse loss instead
+        closs_mse = mse_loss(densities,gaussian, reduction ='none').mean(dim=[1, 2, 3])
+
+        #TODO : assigne time weight to each mean
+        time_scaling = torch.tensor(list(map(time_scale,t))).to(self.device)
+
+        closs_mse = time_scaling * closs_mse
+        L_count_mse = closs_mse.mean()
+
+        #TODO : replace with just true count-approx count. scale it down as this can be huge. 
+        closs_count =  abs(densities.sum(dim=(1,2,3)) - gaussian.sum(dim=(1,2,3)))
+        closs_count = time_scaling * closs_count
+        L_count_count = closs_count.mean()
         
+        #TODO : add W2 loss and total variation
+        #TODO: scale all loss terms by the time step we are at 
+        #TODO : a parameter update should be done but only a couple times (>every 10 epohcs)
+        
+        # last version loss :
+        #L_count = torch.mean(torch.linalg.norm( densities - gaussian, ord = 'fro', dim = (2,3) )**2)
+
+        #check for gradient tracking (remove in future)
+        if self.trainer.training :
+            #assert L_count.requires_grad
+            assert L_count_mse.requires_grad
+        
+        #Total loss :
+        #loss = Lc + self.magnitude_regularizer*L_count
+
+        loss = Lc + self.lambda_Cmse * L_count_mse + self.lambda_Ccount * L_count_count
+        
+
+        #x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised 
+
+        x_0_ = x_start[0].clone().detach().permute(1,2,0)
+        x_t_ = x_t[0].clone().detach().permute(1,2,0)
+        noise_ = noise[0].clone().detach().permute(1,2,0)
+        eps_t_ = eps_t[0].clone().detach().permute(1,2,0)
+        t_ = t[0].item()
+        true_map = gaussian[0].clone().detach()
+        x_map = densities[0].clone().detach()
+        x_denoised = reconstructed[0].clone().detach().permute(1,2,0)
+
+        b_plot = dict(
+            x0 = x_0_,
+            xt = x_t_,
+            z = noise_,
+            epst = eps_t_,
+            t = t_,
+            y = true_map,
+            y_hat = x_map,
+            x_hat = x_denoised
+        )
+        self.plot_per_steps(b_results=b_plot)
+        '''
         if self.global_step % 100 == 0 and self.trainer.training:
             recon = reconstructed.detach()
             recon = Resize(size=(1536, 2048), 
@@ -712,18 +813,68 @@ class ControlLDM(LatentDiffusion):
                                 t=t[0].detach())
             except :
                 pass    #TODO: get rid of this -> error can occur at "recon = recon[0].squeeze(0).cpu().permute(1,2,0)"
-
+        '''
         log_prefix = 'train' if self.training else 'val'
-        loss_dict.update({f'{log_prefix}/loss_simple': loss.mean()})
+        loss_dict.update({f'{log_prefix}/loss_simple': loss})
         loss_dict.update({f'{log_prefix}/Lc': Lc.mean(),
-                           'lambda' : round(self.magnitude_regularizer.item(),2), 
-                           f'{log_prefix}/L_count': L_count.mean()})
+                            f'{log_prefix}/l*L_count_mse': L_count_mse*self.lambda_Cmse,
+                            f'{log_prefix}/l*L_count_count': L_count_count*self.lambda_Ccount})
         
-        return loss, loss_dict, Lc, L_count
+        return loss, loss_dict, Lc, L_count_mse, L_count_count
     
     def p_losses(self, x_start, cond, t, noise=None,*args, **kwargs) :
         
         return self.compute_loss(x_start, cond, t, noise=None, mode = 'train', *args, **kwargs)[:2]
+
+    def plot_per_steps(self, b_results : dict, per_global_step : int = 100) :
+        
+        if self.global_step % per_global_step == 0 and self.trainer.training :
+            
+            x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised = b_results.values()
+            true_count = int(true_map.sum().item())
+            approx_count = int(x_map.sum().item())
+            
+            x_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(x_map)
+            true_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(true_map)
+
+            name = f'./saves/grid-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
+            fig, axis = plt.subplots(2,4, figsize=(12,6))
+
+            try : 
+                axis[0,0].imshow(x_0.cpu())
+                axis[0,0].axis('off')
+                axis[0,0].set_title(f'x_0')
+
+                axis[0,1].imshow(x_denoised.cpu())
+                axis[0,1].axis('off')
+                axis[0,1].set_title(f'x_denoised')
+
+                axis[0,2].imshow(true_map.permute(1,2,0).cpu())
+                axis[0,2].axis('off')
+                axis[0,2].set_title(f'true_map')
+
+                axis[0,3].imshow(x_map.permute(1,2,0).cpu())
+                axis[0,3].axis('off')
+                axis[0,3].set_title(f'x_map')
+
+                axis[1,0].imshow(x_t.cpu())
+                axis[1,0].axis('off')
+                axis[1,0].set_title(f'x_{t}')
+
+                axis[1,1].imshow(eps_t.cpu())
+                axis[1,1].axis('off')
+                axis[1,1].set_title(f'eps_{t}')
+
+                axis[1,2].imshow(noise.cpu())
+                axis[1,2].axis('off')
+                axis[1,2].set_title(f'z')
+
+                fig.suptitle(f'true_count = {true_count}, approx_count={approx_count}', fontsize=14)
+                plt.savefig(name, bbox_inches='tight')
+
+            except Exception as e :
+                print(f'Exception at plot_per_steps() --> Err={e}')
+                pass
 
     def train_plot(self, recon, gt, dens, true_count, t) :
 
@@ -750,140 +901,142 @@ class ControlLDM(LatentDiffusion):
         plt.show()
         plt.close('fig')
 
+    def count_guided_sampling(self, 
+     map: torch.tensor,
+     prompt : List[str],
+     gradient_scale : float = .1, 
+     denoising_steps : int = 1000,
+     ddim_discretize = 'uniform',
+     unconditional_guidance_scale = .1,
+     progress_track : Optional[str]= None ) -> torch.Tensor :
+        '''
+        progress_track : savefilename as .csv file; will be saved in working dir.
+        '''
+        self.register_schedule(timesteps=denoising_steps, set_device=self.device)
 
+        '''if ddim_discretize == 'uniform':
+            c = 1000 // denoising_steps
+            time_steps = np.asarray(list(range(0, 1000, c))) + 1
+        elif ddim_discretize == 'quad':
+            time_steps = ((np.linspace(0, np.sqrt(1000 * .8), denoising_steps)) ** 2).astype(int) + 1
+        else:
+            raise NotImplementedError(ddim_discretize)
+        '''
 
-
-
-
-
-
-
-    def count_guided_sampling(self, map : torch.Tensor, prompt : List[str], gradient_scale : float =.1, denoising_steps : int = 50) -> torch.Tensor :
-        #may have to create a scheduler prior 
-        # rn noise is created from 64dim, maybe try 512dim
+        timesteps = reversed([t for t in range(1,denoising_steps)])#reversed([t for t in range(1,denoising_steps)])
+        #last_n_steps, timesteps = timesteps[-2:][0], timesteps[:-2]
+        #timesteps = timesteps + [i for i in reversed(range(1,last_n_steps))]
+        
         if isinstance(self.counter,STEERER_memory_alloc) :
             self.on_train_start()
+        assert self.device == self.counter.device, f'This method requires both models to be on the same device for grad computation. '
+        assert isinstance(map, torch.Tensor), f'requires map to be a (3,512,512) torch tensor. You passed a {type(map)} ! '
         if len(map.shape) == 3 :
             map = map.unsqueeze(0)
             b=1
         else :
             assert map.shape[0] == len(prompt), f'Not enough prompts for maps given. Got {len(prompt)}, expected {map.shape[0]}. '
             b = map.shape[0]
-        assert self.device == self.counter.device, f'This method requires both models to be on the same device for grad computation. '
-        #TODO: figure out permutation for gaussians ---> occurs in get_batch
-        gaussian = map.detach()#.permute(0,3,1,2)
+
+        if progress_track :
+            epsmin, epsmax, tepsmin, tepsmax, xmin, xmax, sc_min, sc_max, alp = [], [], [], [], [], [], [], [], [] 
+
+        gaussian = map.detach()
         gaussian = Resize(size=(1536, 2048), 
                           interpolation=InterpolationMode.NEAREST_EXACT)(gaussian)  
         gaussian = gaussian * (512**2/(1536*2048))
-        print(f'{gaussian.shape=}')
-        noise = default(None, lambda: torch.randn_like(torch.zeros(1,4,64,64), device = self.device))
-        timesteps = reversed([t for t in range(1,denoising_steps)])
-        batch = {'jpg' : torch.zeros(b,512,512,3), 'txt' : prompt, 'hint' : map}
+
+        batch = {'jpg' : torch.zeros((b,512,512,3), device=self.device), 'txt' : prompt, 'hint' : map}
         _, txt_encoded = super().get_input(batch, self.first_stage_key)
+
         #map = einops.rearrange(map, 'b h w c -> b c h w')
         map = map.to(memory_format=torch.contiguous_format).float()
         cond = dict(c_crossattn=[txt_encoded], c_concat=[map])
-        
-        x_noisy = noise 
+        unconditional_cond = dict(c_crossattn=[txt_encoded], c_concat=None)
+
+        x_t = default(None, lambda: torch.randn_like(torch.zeros(b,4,64,64), device = self.device))
+
+        bar = tqdm(timesteps,
+            desc='steps',
+            total=denoising_steps)
+        #bar_format="{l_bar}{bar} {n}/{total} steps - [{e_min}; {e_max}], {score} | {Closs} | {ycount}/{true_count}, [{te_min};{te_max}]")
+
         for ts in timesteps :
+            
             t = torch.full((b,), ts, device=self.device, dtype=torch.long)
+
             with torch.no_grad() :
-                eps_t, x_noisy = super().p_losses(x_noisy,cond,t,noise)[2:]
-                t_reconstr = self.predict_reconstructed_from_noise(x_t=eps_t,t=t,noise=x_noisy)
-                t_reconstr = self.decode_first_stage(t_reconstr) 
-                t_reconstr = enhance_tensor(t_reconstr)
-            xt = t_reconstr.clone().detach().requires_grad_(True)
-            #xt.retain_grad_()
-            del t_reconstr
-            print(f'prior resize{xt.shape=}, {xt.requires_grad=}')
+                model_t = self.apply_model(x_t, t, cond)
+                model_uncond = self.apply_model(x_t, t, unconditional_cond)
+                model_output = model_uncond + unconditional_guidance_scale * (model_t - model_uncond)
+                if self.parameterization == "v":
+                    eps_t = self.predict_eps_from_z_and_v(x_t, t, model_output)
+                else:
+                    eps_t = model_output
+
+            if progress_track :
+                epsmin.append(eps_t.min().item())
+                epsmax.append(eps_t.max().item())
+            xt = x_t.clone().detach().requires_grad_(True)
+            xt.retain_grad()
+
+            xt_reconstructed = self.predict_reconstructed_from_noise(x_t=xt, t=t, noise = eps_t) #noise = eps_t
+            xt_512 = self.decode_first_stage_train(xt_reconstructed)
+            xt_pretty = enhance_tensor(xt_512)
+
+            #plt.imshow(xt_pretty.clone().detach().cpu().squeeze(0).permute(2,1,0))
+            #plt.savefig(f'IMAGE-{ts}.png', bbox_inches='tight', pad_inches=0 )
+            #plt.close()
+        
+            ymap = self.counter.get_count(interpolate(xt_pretty, size=(1536,2048), mode = 'nearest'), mode='train')
+            #norm = torch.linalg.norm(gaussian - ymap, ord = 'fro', dim = (2,3))**2
+            norm = mse_loss(gaussian,ymap, reduction ='none').mean(dim=[1, 2, 3])#.mean() no mean in case we want batch wise sampling
             
-
-            ymap = self.counter.get_count(interpolate(xt, size=(1536,2048), mode = 'nearest'), mode='train')
-            #ymap.retain_grad()
-            print(f'{ymap.requires_grad=}')
-            #print(f'{ymap.shape=}')
-            diff = gaussian - ymap
-            print(f'{diff.shape=}')
-            norm = torch.linalg.norm(diff, ord = 'fro', dim = (2,3))**2
-            print(f'{norm.shape=}')
-            L_count = torch.linalg.norm( gaussian - ymap, ord = 'fro', dim = (2,3) )**2
-            L_count = L_count.squeeze(1)
-            print(f'{L_count.shape=}')
-            #score = -torch.autograd.grad(outputs=L_count, inputs=t_reconstr, create_graph=True, is_grads_batched=True, retain_graph=True)[0]
-            print(f'{xt.requires_grad=}')
-            L_count.backward()
-            #print(f'{ymap.grad=}, {max(ymap.grad)=}')
-            score = -xt.grad
-            print(f'{score=}')
-
-            alpha = gradient_scale*(denoising_steps-t)/denoising_steps
-            eps_t = eps_t - alpha*extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, score.shape)*score
-            x_noisy = self.guide_denoised(x_noisy, t, eps_t)
+            #L_count = torch.linalg.norm( gaussian - ymap, ord = 'fro', dim = (2,3) )**2
+            #L_count = L_count.squeeze(1)
             
-        return x_noisy
-        '''
-        Usage : 
-        from torch import set_float32_matmul_precision, device
-        from torch.cuda import set_device, empty_cache
-        import sys
-        import os.path as path
+            #L_count.backward()
+            norm.backward()
+            score = -xt.grad #TODO: multiply with optimal regularizer hoping it will give better results when using less denoising steps
 
-        gp = path.dirname(path.dirname(__file__))
-        if gp not in sys.path :
-            sys.path.append(gp)
+            with torch.no_grad() :
+                #experimental : trying to scale alpha with magnitude regularizer
+                alpha = gradient_scale*(denoising_steps-ts)/denoising_steps
+                eps_tilde = eps_t - alpha*extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, score.shape)*score
+                x = self.predict_reconstructed_from_noise(x_t=x_t, t=t, noise = eps_tilde)
+                x_t = extract_into_tensor( torch.sqrt(self.alphas_cumprod), t-1, x.shape )* x + extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t-1, eps_tilde.shape) * eps_tilde #try with exchanged x and eps_tilde
+                
+            if progress_track :
+                tepsmin.append(eps_tilde.min().item())
+                tepsmax.append(eps_tilde.max().item())
+                xmin.append(x_t.min().item())
+                xmax.append(x_t.max().item())
+                sc_min.append(score.min().item())
+                sc_max.append(score.max().item())
+                alp.append(alpha)
 
-        steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
-        if steerer_loc not in sys.path :
-            sys.path.append(steerer_loc)
 
-        control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
-        if control_loc not in sys.path :
-            sys.path.append(control_loc)
-
-        #from data_jhu import CrowdDataSetv2, MapConfig
-        #from data_nwpu import CrowdDataSet
-        from data import CCNetSet, MapConfig
-        import sys 
-        import pytorch_lightning as pl
-        from pytorch_lightning.strategies import DDPStrategy
-        from datetime import timedelta
-
-        from torch.utils.data import DataLoader, random_split#ConcatDataset
-        from ControlNetHome.cldm.logger import ImageLogger
-        from ControlNetHome.cldm.model import create_model, load_state_dict, create_model_og, load_state_dict_og
-
-        from inference import ckpt_search
-
-        from pytorch_lightning.callbacks import DeviceStatsMonitor
-        import os
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
-
-        resume_path = ckpt_search()
-        model = create_model_og('./ControlNetHome/models/cldm_v15_2.yaml').cpu()
-        interm = load_state_dict_og(resume_path)
-        model.load_state_dict(interm,strict = False)
-        model = model.to(0)
-
-        import einops as ei
-        import torch 
-        map = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/0041828.pt',map_location= torch.device(0))
-        image = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/img/0041828.pt',map_location=torch.device(0))
-        prompt = ['a photograph of a crowd of people with flowers']
-        print(f'{map.shape=}')
-        sample = model.count_guided_sampling(map=map,prompt=prompt)
-        '''
-    def guide_denoised(self, x_t : torch.tensor, t : int, eps : torch.tensor) -> torch.tensor :
-        # self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod)))
-        #self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod)))
-        cumratio = extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * extract_into_tensor(self.sqrt_alphas_cumprod, t-1, x_t.shape)
-        denoised_x_t = torch.sqrt(
-            x_t - extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape) * eps
-        )
-        guided_eps_t = torch.sqrt(
-             extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t-1, x_t.shape) * eps
-        )
-        return cumratio*denoised_x_t + guided_eps_t
-
+            bar.set_postfix(
+                time = ts,
+                eps_range = (eps_t.min().item(), eps_t.max().item()), 
+                score = (score.min().item(), score.max().item()), 
+                ycount = f'{ymap.sum().item()}/',
+                true_count = gaussian.sum().item(),
+                tilde_eps_range = (eps_tilde.min().item(), eps_tilde.max().item())
+            )
+            bar.update(1)
+        
+            if progress_track :
+                import csv
+                if '.csv' not in progress_track :
+                    progress_track = progress_track+'.csv'
+                with open(progress_track, 'w', newline='') as data:
+                    writer = csv.writer(data)
+                    writer.writerow(['eps_min', 'eps_max', 'teps_min', 'teps_max', 'x_min', 'x_max', 'score_min', 'score_max', 'alpha_'])  # Write header
+                    for eps_min, eps_max, teps_min, teps_max, x_min, x_max, score_min, score_max, alpha_ in zip(epsmin, epsmax, tepsmin, tepsmax, xmin, xmax,sc_min,sc_max,alp):
+                        writer.writerow([eps_min, eps_max,  teps_min, teps_max, x_min, x_max, score_min, score_max, alpha_])
+        image = self.decode_first_stage(x_t)
+        return image
 
 
 

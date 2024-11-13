@@ -147,7 +147,7 @@ class DDPM(pl.LightningModule):
             self.ucg_prng = np.random.RandomState()
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
-                          linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
+                          linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3, set_device = None):
         if exists(given_betas):
             betas = given_betas
         else:
@@ -163,7 +163,10 @@ class DDPM(pl.LightningModule):
         self.linear_end = linear_end
         assert alphas_cumprod.shape[0] == self.num_timesteps, 'alphas have to be defined for each timestep'
 
-        to_torch = partial(torch.tensor, dtype=torch.float32)
+        if set_device :
+            to_torch = partial(torch.tensor, dtype=torch.float32, device = set_device)
+        else :
+            to_torch = partial(torch.tensor, dtype=torch.float32)
 
         self.register_buffer('betas', to_torch(betas))
         self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
@@ -177,8 +180,10 @@ class DDPM(pl.LightningModule):
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
         # (NEW) calculations for counting guided ddim sampling:
+        #training :
         self.register_buffer('sqrt_one_minus_alphas_cumprod_divided_alphas_cumprod', to_torch(np.sqrt((1-alphas_cumprod) / alphas_cumprod)))
-        
+        #sampling :
+        self.register_buffer('sqrt_sqrt_recip_alphas_cumprod', to_torch(np.sqrt(np.sqrt(1. / alphas_cumprod))))
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (
@@ -378,7 +383,6 @@ class DDPM(pl.LightningModule):
 
     def q_sample(self, x_start, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
-       
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
@@ -632,8 +636,8 @@ class LatentDiffusion(DDPM):
 
     def register_schedule(self,
                           given_betas=None, beta_schedule="linear", timesteps=1000,
-                          linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
-        super().register_schedule(given_betas, beta_schedule, timesteps, linear_start, linear_end, cosine_s)
+                          linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3, set_device=None):
+        super().register_schedule(given_betas, beta_schedule, timesteps, linear_start, linear_end, cosine_s, set_device)
 
         self.shorten_cond_schedule = self.num_timesteps_cond > 1
         if self.shorten_cond_schedule:
@@ -916,15 +920,6 @@ class LatentDiffusion(DDPM):
         kl_prior = normal_kl(mean1=qt_mean, logvar1=qt_log_variance, mean2=0.0, logvar2=0.0)
         return mean_flat(kl_prior) / np.log(2.0)
 
-
-
-
-
-
-
-
-
-    # OLD LOSS FUNC 
     def p_losses(self, x_start, cond, t, noise=None):
 
         noise = default(noise, lambda: torch.randn_like(x_start))
@@ -933,7 +928,7 @@ class LatentDiffusion(DDPM):
 
 
         # In scope temp copy for ControlLDM p_loss()
-        output_copy = model_output.clone()  #.detach()
+        eps = model_output.clone()  #.detach()
         #x_noisy = x_noisy.detach()
 
 
@@ -967,7 +962,7 @@ class LatentDiffusion(DDPM):
         loss += (self.original_elbo_weight * loss_vlb)
         loss_dict.update({f'{prefix}/loss': loss})
 
-        return loss, loss_dict, output_copy, x_noisy
+        return loss, loss_dict, eps, x_noisy
 
 
 
