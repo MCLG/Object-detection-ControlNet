@@ -1,3 +1,8 @@
+## Usage :
+After installing all dependencies, activate the conda environment `conda activate xcontrol`. Then run from the ControlNetHome dir :
+```
+python train.py
+```
 
 ## Installation and setting up the ControlNet: 
 Clone the Git rep and follow the following instructions :
