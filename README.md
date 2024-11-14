@@ -7,7 +7,7 @@ python train.py
 ## Installation and setting up the ControlNet: 
 Clone the Git rep and follow the following instructions :
 
-1) create a conda venv `conda create xcontrol python=3.9`.Then activate the env. This followed the steps from https://github.com/lllyasviel/ControlNet/issues/612. 
+1) create a conda venv `conda create xcontrol python=3.9`. I used conda 24.4.0. Then activate the env. This followed the steps from https://github.com/lllyasviel/ControlNet/issues/612. 
 
     First install this package 
     `pip3 install -U xformers torchvision --index-url https://download.pytorch.org/whl/cu118`
