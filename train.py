@@ -2,16 +2,19 @@ from torch import set_float32_matmul_precision, device
 from torch.cuda import set_device, empty_cache
 import sys
 import os.path as path
+import os 
 
 gp = path.dirname(path.dirname(__file__))
 if gp not in sys.path :
     sys.path.append(gp)
 
-steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
+project_root = os.path.abspath(os.path.dirname(__file__))
+steerer_loc = os.path.join(project_root, 'STEERER')
 if steerer_loc not in sys.path :
     sys.path.append(steerer_loc)
 
-control_loc = '/home/luk02485/development/ControlNet/ControlNetHome'
+project_root = os.path.abspath(os.path.dirname(__file__))
+control_loc = os.path.join(project_root, 'ControlNetHome')
 if control_loc not in sys.path :
     sys.path.append(control_loc)
 
@@ -26,8 +29,7 @@ from datetime import timedelta
 from torch.utils.data import DataLoader, random_split#ConcatDataset
 from ControlNetHome.cldm.logger import ImageLogger
 from ControlNetHome.cldm.model import create_model, load_state_dict, create_model_og, load_state_dict_og
-
-from inference import ckpt_search
+from ControlNetHome.tools.utils import ckpt_search
 
 from pytorch_lightning.callbacks import DeviceStatsMonitor
 

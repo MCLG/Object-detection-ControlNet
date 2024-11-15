@@ -9,8 +9,8 @@ def sample(loc=None,temp_file=None) :
     if temp_file is None :
         #temp_file = 'guided_sampling_bounds.csv'
         msg = 'No file "temp_file" passed as input. sample() requires a csv. file created during a cldm.cldm.ControlNet.count_guided_sampling(progress_track : str ) call. \n'
-         'Usage : 1) cldm.cldm.ControlNet.count_guided_sampling(progress_track : str = temp_file) \n'
-         '        2) "python CGsampling_plotter.py temp_file" or "sample(temp_file=temp_file)" '
+        'Usage : 1) cldm.cldm.ControlNet.count_guided_sampling(progress_track : str = temp_file) \n'
+        '        2) "python CGsampling_plotter.py temp_file" or "sample(temp_file=temp_file)" '
         raise TypeError(msg)
     content = dict()
 

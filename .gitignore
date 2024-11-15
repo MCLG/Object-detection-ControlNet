@@ -39,7 +39,7 @@ tuning_config.txt
 *.out
 job/
 exp/
-scale_generalization/
+#scale_generalization/
 .vscode/
 
 
@@ -80,7 +80,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+#lib/
 lib64/
 parts/
 sdist/

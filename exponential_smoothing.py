@@ -3,12 +3,14 @@ from numpy.random import uniform
 import numpy as np
 import matplotlib.pyplot as plt
 
-b = 0.99
-l = 1
-steps = 1000
-R1, R1inverse, R2, L, L_stb = [],[],[],[],[]
+def main() :
 
-for k in range(steps) :
+    b = 0.99
+    l = 1
+    steps = 1000
+    R1, R1inverse, R2, L, L_stb = [],[],[],[],[]
+
+    for k in range(steps) :
 
     Lsimple = torch.tensor(uniform(0.001,2,1000), device = 1) * (steps/(steps+k))
     Lc = torch.tensor(uniform(0.0001,.5,1000), device = 1) * (steps/(steps+k))
@@ -29,36 +31,39 @@ for k in range(steps) :
     L.append(l.cpu())
     L_stb.append(l_stable.cpu())
 
-fig,ax = plt.subplots(2,2,figsize=(12,8))
-x = [k for k in range(steps)]
-ax[0,0].plot(x,R1)
-ax[0,0].plot(x,R2)
-ax[0,0].set_yscale('log')
+    fig,ax = plt.subplots(2,2,figsize=(12,8))
+    x = [k for k in range(steps)]
+    ax[0,0].plot(x,R1)
+    ax[0,0].plot(x,R2)
+    ax[0,0].set_yscale('log')
 
-ax[0,1].plot(x,R1)
-ax[0,1].plot(x,R1inverse)
-ax[0,1].set_yscale('log')
+    ax[0,1].plot(x,R1)
+    ax[0,1].plot(x,R1inverse)
+    ax[0,1].set_yscale('log')
 
-ax[1,0].plot(x, L)
+    ax[1,0].plot(x, L)
 
-ax[1,1].plot(x, L_stb)
+    ax[1,1].plot(x, L_stb)
 
-def sigminv(x) :
+    def sigminv(x) :
     return 2-torch.sigmoid(x)
 
-fig.savefig('expo_smoothing.png')
+    fig.savefig('expo_smoothing.png')
 
-multipliers = np.random.uniform(0.7, 1.5, size=len(x))
-x = x * multipliers
-print(x.shape)
-fig2, ax2 = plt.subplots(1,1,figsize = (10,8))
-sigm = torch.sigmoid(.01*torch.tensor(x))
-sigmainv = sigminv(.01*torch.tensor(x))
+    multipliers = np.random.uniform(0.7, 1.5, size=len(x))
+    x = x * multipliers
+    print(x.shape)
+    fig2, ax2 = plt.subplots(1,1,figsize = (10,8))
+    sigm = torch.sigmoid(.01*torch.tensor(x))
+    sigmainv = sigminv(.01*torch.tensor(x))
 
-one = [1 for k in range(steps)]
+    one = [1 for k in range(steps)]
 
-ax2.plot([k for k in range(steps)],sigm)
-ax2.plot([k for k in range(steps)],sigmainv)
-ax2.plot([k for k in range(steps)],one,linestyle = '--')
+    ax2.plot([k for k in range(steps)],sigm)
+    ax2.plot([k for k in range(steps)],sigmainv)
+    ax2.plot([k for k in range(steps)],one,linestyle = '--')
 
-fig2.savefig('expected_expo_smoothing.png')
+    fig2.savefig('expected_expo_smoothing.png')
+
+if __name__ == '__main__' :
+    main()

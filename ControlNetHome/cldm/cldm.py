@@ -17,16 +17,25 @@ from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSeq
 from ldm.models.diffusion.ddpm import LatentDiffusion
 from ldm.util import log_txt_as_img, exists, instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
+import os 
+import sys 
 
 # packages i added :
 from ldm.util import default
 try :
-    from STEERER.inference import CounterWrapper
+    from STEERER.steerer_inference import CounterWrapper
 except :
+
+    project_root = os.path.abspath(os.path.dirname(__file__))
+    steerer_path = os.path.join(project_root, 'STEERER')
+    if steerer_path not in sys.path:
+        sys.path.append(steerer_path)
+    from STEERER.steerer_inference import CounterWrapper
+    '''
     import sys 
     steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
     if steerer_loc not in sys.path :
-        sys.path.append(steerer_loc)
+        sys.path.append(steerer_loc)'''
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -41,10 +50,18 @@ import os
 from torch.nn.functional import mse_loss 
 
 #plots 
-from CGsampling_plotter import sample as CG_plot_sample
+from tools.CGsampling_plotter import samples as CG_plot_sample
 
 # Set STEERER here 
-from STEERER.lib.models.build_counter import freeze_model
+try :
+    from STEERER.lib.models.build_counter import freeze_model
+except : 
+
+    project_root = os.path.abspath(os.path.dirname(__file__))
+    steerer_path = os.path.join(project_root, 'STEERER')
+    if steerer_path not in sys.path:
+        sys.path.append(steerer_path)
+    from STEERER.lib.models.build_counter import freeze_model
 counter = None 
 counter_device = "cpu"  #TODO : automatically assign to GPU with no active process --> handle then when multiple instances of STEERER are running 
 class STEERER_memory_alloc(nn.Module):
@@ -370,7 +387,7 @@ class ControlLDM(LatentDiffusion):
         self.lambda_Cmse = torch.tensor(1000000)
         self.lambda_Ccount = torch.tensor(.001)
     
-    @torch.no_grad()
+    @torch.no_grad() #NOT IN USE
     def tune_magnitude_regularizer(self,beta):
         '''
         This is done by going through all 50 validation batches. See README.md for details.

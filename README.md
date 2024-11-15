@@ -5,33 +5,38 @@ python train.py
 ```
 
 ## Installation and setting up the ControlNet: 
-Clone the Git rep and follow the following instructions :
+Clone the Git rep `git clone --depth 1` and follow the following instructions :
 
-1) create a conda venv `conda create xcontrol python=3.9`. I used conda 24.4.0. Then activate the env. This followed the steps from https://github.com/lllyasviel/ControlNet/issues/612. 
+1) create a conda venv `conda create -n xcontrol python=3.9`. I used conda 24.4.0. Then activate the env. This followed the steps from https://github.com/lllyasviel/ControlNet/issues/612. 
 
     First install this package 
     `pip3 install -U xformers torchvision --index-url https://download.pytorch.org/whl/cu118`
 
-    Then install the rest of the packages from the .yaml file `conda env update xcontrol environment_X.yaml`
+    Then install the rest of the packages from the .yaml file `conda env update --name xcontrol --file environment_X.yaml`. The yaml file should be located in the ControlNetHome folder.
 
-2) Follow the first steps of Step 3 from https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md .
+2) Follow the first steps of Step 3 from https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md :
 
-    a) download the file "v1-5-pruned.ckpt" from https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/main . This file **needs** to be located in  "./ControlNetHome/models/v1-5-pruned.ckpt". 
+    a) download the file "v1-5-pruned.ckpt" from https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/main (DEAD LINK --> located in folder /net/vid-raxus/storage/deeplearning/users/luk02485/control_net_checkpoints ). This file **needs** to be located in  "./ControlNetHome/models/v1-5-pruned.ckpt". 
 
     b) Navigate inside "./ControlNetHome" and execute
     
      ```
-     python tool_add_control.py ./models/v1-5-pruned.ckpt ./models/control_sd15_ini.ckpt
+     python tool_add_control.py ./models/v1-5-pruned.ckpt ./models/control_sd15_ini_v2.ckpt
      ```
 
      The newly created file "./ControlNetHome/models/control_sd15_ini.ckpt" should appear.
 
-3) Installing STEERER : This code of STEERER has been written with an obsolete version of mmcv. We now require mmengine aswell and had to modify imports inside the code. Do 
+3) Installing STEERER : The code for STEERER has been written with an obsolete version of mmcv. We now require mmengine aswell and had to modify imports inside the code. Do 
 ```
-pi3p install mmcv==2.2.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.3/index.html
+pip3 install mmcv==2.2.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.3/index.html
 ```
 
-4) Strictly follow the installation instructions from https://github.com/open-mmlab/mmengine to install mmengine.
+4) Strictly follow the installation instructions from https://github.com/open-mmlab/mmengine to install mmengine :
+
+    ```
+    pip install -U openmim
+    mim install mmengine
+    ```
 
 5) Make sure the following line is correctly written in the file "./Steerer./lib.models/heads.base_head.py" at line 5 :
 `from mmengine.mmengine.model import base_module.py`
@@ -42,9 +47,9 @@ pip3 install dict_recursive_update
 pip3 install yacs
 ```
 
-7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file.
+7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file. Rename the file as "nwpu_pre_trained.pth"
 
-### Additional warnings that may occur:
+### Additional warnings/errors that might occur:
  If upon  initializing the model
  
  (include graphic here), 
@@ -64,6 +69,11 @@ follow the steps :
     3) Then install the backup env again `conda env update -f NAME.yaml`.
 
     Everything should run without warning/error now.
+
+3) Error "ASGD is already registered in optimizer at torch.optim.asgd" :
+    According to https://github.com/open-mmlab/mmengine/issues/1593 this is due to a pytorch>=2.5 update and requires to change code at 
+    /home/user/.conda/envs/control_test/lib/python3.9/site-packages/mmengine/optim/optimizer/builder.py 
+    See : https://github.com/open-mmlab/mmengine/commit/4c22f78cdea2981a2b48a167e9feffe4721f8901 
 
 ## Changes done to the original ControlNet Code
 
