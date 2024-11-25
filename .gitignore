@@ -27,6 +27,7 @@ epsplots/
 inference.py 
 scrap.py 
 test.py 
+train_.py
 train_log.txt 
 tuning_config.txt
 

@@ -1,9 +1,3 @@
-## Usage :
-After installing all dependencies, activate the conda environment `conda activate xcontrol`. Then run from the ControlNetHome dir :
-```
-python train.py
-```
-
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
 
@@ -120,3 +114,42 @@ An issue with trying the multi-GPU training is to initialize all models on the C
 ```
 
 This is first loaded on the CPU. 
+
+## Loading Data
+Before training the model, you will need to process your data. We used the NWPU set [[1]](#1) but any dataset will work if it is organised as such:
+
+```markdown
+- **nwpu/**
+    -**images/**
+    -**mats/**
+    -**jsons/**
+```
+
+where ```ìmages``` provides the ```*.jpeg``` images, and two types of labels(```jsons``` and ```mats```). The points order is ```x, y```. To be specific, the contents of ```.mat``` files are consistent with the UCF-QNRF. The boxes labels is ```xmin, ymin, xmax, ymax```. Only one folder ```mats``` or ```jsons``` is required.
+
+```bash
+ python load_nwpu.py RAW_DATA_LOC DATA_LOC DEVICE MINIMAL_DENSITY MAXIMAL_DENSITY
+``` 
+
+where ```RAW_DATA_LOC``` is the location of the dataset, ```DATA_LOC``` is where you want to store the processed dataset. Both arguments are required. Optionally, you can set the ```DEVICE``` and the ```MINIMAL_DENSITY``` and ```MAXIMAL_DENSITY``` of objects contained on each pair image-density_map. Running this command will slice as much 512,512 images of the dataset and construct the associated gaussian density maps, along with the EM-Gaussian mixture model approximated means of the annotated gaussian clouds on the density maps. Running this file is long depending on the size of your dataset. You will be left will a directory
+
+```markdown
+- **DATA_LOC/**
+    -**train/**
+        -**img/**
+        -**map/**
+        -**mean/**
+```
+
+## Usage :
+After installing all dependencies, activate the conda environment `conda activate xcontrol`. Then run from the ControlNetHome dir :
+```
+python train.py
+```
+
+## References
+<a id="1">[1]</a> 
+Junyu-Xuelong, (2020). 
+NWPU-Crowd: A Large-Scale Benchmark for Crowd Counting and Localization.
+IEEE Transactions on Pattern Analysis and Machine Intelligence
+

@@ -73,9 +73,10 @@ if __name__ == '__main__':
 
 class CCNetSet(Dataset):
     
-    def __init__(self, img_dir, map_dir, csv_loc):
+    def __init__(self, img_dir : str, map_dir : str, csv_loc : str, mean_dir : Optional[str] = None):
         self.img_dir = img_dir
         self.map_dir = map_dir
+        self.mean_dir = mean_dir
         self.data = self.csv2dict(csv_loc)       
 
     def __len__(self):
@@ -90,10 +91,14 @@ class CCNetSet(Dataset):
         source = torch.permute(torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
         target = torch.permute(torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
         target = target - 1 #input to range [-1,1]
-        #source = source.permute(2,1,0)
-        #target = target.permute(2,1,0)
-
+        
         prompt = item['prompt']
+        
+        if self.mean_dir :
+            mean_path = os.path.join(self.mean_dir, item["id"])
+            means = torch.load(mean_path , map_location=torch.device('cpu')).to(dtype=torch.float32)
+            return dict(jpg=target, txt=prompt, hint=source, mean=means)
+
         return dict(jpg=target, txt=prompt, hint=source)
     
     def csv2dict(self, csv_loc) -> List[dict]:
@@ -128,6 +133,43 @@ def rotate_image(image : Union[Image.Image,torch.Tensor] , angle : float ) -> Un
     except AttributeError :
         image = tensor_rotate(image, angle, expand = True)
     return image 
+
+def create_dir(base_path: str):
+    structure = [
+        'train/img',
+        'train/map',
+        'train/mean'
+    ]
+    
+    for dir_path in structure:
+        full_path = os.path.join(base_path, dir_path)
+        os.makedirs(full_path, exist_ok=True)
+        print(f"Created: {full_path}")
+
+def clear_dir(base_path: str):
+
+    target_subdirectories = [
+        'train/img',
+        'train/map',
+        'train/mean'
+    ]
+    try :
+        os.remove(os.path.join(base_path,'labels.csv'))
+    except FileNotFoundError : 
+        pass
+    for subdirectory in target_subdirectories:
+        full_subdirectory_path = os.path.join(base_path, subdirectory)
+        
+        if os.path.exists(full_subdirectory_path) and os.path.isdir(full_subdirectory_path):
+
+            for item in os.listdir(full_subdirectory_path):
+                item_path = os.path.join(full_subdirectory_path, item)
+                
+                if os.path.isfile(item_path) and item.endswith(('.pt', '.csv')):
+                    os.remove(item_path)  
+                
+        else:
+            print(f"Subdirectory does not exist: {full_subdirectory_path}")
 
 def largest_rotated_rect(w : float , h : float , angle : float ) -> tuple:
     """

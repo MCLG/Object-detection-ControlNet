@@ -2,6 +2,7 @@ import einops
 import torch
 import torch as th
 import torch.nn as nn
+import warnings
 
 from ldm.modules.diffusionmodules.util import (
     conv_nd,
@@ -62,6 +63,7 @@ except :
     if steerer_path not in sys.path:
         sys.path.append(steerer_path)
     from STEERER.lib.models.build_counter import freeze_model
+
 counter = None 
 counter_device = "cpu"  #TODO : automatically assign to GPU with no active process --> handle then when multiple instances of STEERER are running 
 class STEERER_memory_alloc(nn.Module):
@@ -70,6 +72,9 @@ class STEERER_memory_alloc(nn.Module):
 
     def forward(self, x):
         return x
+
+# DivergenceLosses :
+from tools.divergence_loss import DivergenceLoss, to_dmap
 
 class ControlledUnetModel(UNetModel):
     def forward(self, x, timesteps=None, context=None, control=None, only_mid_control=False, **kwargs):
@@ -384,9 +389,22 @@ class ControlLDM(LatentDiffusion):
         #self.magnitude_every_x_epochs = 1 
 
         #regularizing coefficients :
-        self.lambda_Cmse = torch.tensor(1000000)
-        self.lambda_Ccount = torch.tensor(.001)
-    
+        self.lambda_control = torch.tensor(1000000)
+        self.lambda_count = torch.tensor(.001)
+
+        #Control input and loss type :
+        self.loss_key = loss_key    #"mean" (w2, KL) or "gaussian" (for MSE and TV/TV-grad) or None (for vanilla controlNet)
+        self.loss_type = loss_type  #"w2" #or "MSE", "TV-class", "TV-grad", (wip)"KL"
+        if self.loss_key == 'mean' :
+            assert self.loss_type in ['w2', 'kl'], f'Not appropriate loss_key={self.loss_key} for loss_type={self.loss_type}. Change in cldm_v15_2.yaml '
+        elif self.loss_key == 'gaussian' : 
+            assert self.loss_type in ['TV-class', 'TV-grad', 'MSE'], f'Not appropriate loss_key={self.loss_key} for loss_type={self.loss_type}. Change in cldm_v15_2.yaml '
+            if self.loss_type == 'TV-grad' :
+                warnings.warn('The loss "TV-grad" produces a possibly large upper bound value to the classifier loss and is independent on the produced density map. We do not recommend training with this. ')
+        self.loss_downscaling_factor = loss_downscaling_factor
+        DLoss = DivergenceLoss(downscaling_factor = self.loss_downscaling_factor, extract_type = 'ggm-em', device = self.device, eval_on_low_dim = False)
+        self.add_count_loss_too = add_count_loss_too
+
     @torch.no_grad() #NOT IN USE
     def tune_magnitude_regularizer(self,beta):
         '''
@@ -529,9 +547,9 @@ class ControlLDM(LatentDiffusion):
         
         assert self.magnitude_reg_previous_importance > 0 and self.magnitude_reg_previous_importance < 1, 'Invalid importance scaled passed for magnitude regularizer parameter. Range should be (0,1).'
         
-        #uncomment for multiple device training :
+        DLoss.device = self.device
+        
         counter_device = self.device
-
         if isinstance(self.counter, STEERER_memory_alloc) :
             print(f'loaded {self.counter_dict} on STEERER on device={counter_device}')
             self.counter = CounterWrapper(path = self.counter_dict).to(counter_device)
@@ -543,44 +561,36 @@ class ControlLDM(LatentDiffusion):
     #modified function
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, dropout = True, *args, **kwargs):
-        '''
-        #get rid of this in the future :
-        must_include = ['man', 'men', 'woman', 'women', 'group', 'mass', 'mob', 'people', 'crowd', 
-                'human', 'person', 'highschooler', 'male', 'student', 'boy', 'girl', 
-                'son', 'daughter', 'father', 'mother', 'gathering', 'protest', 'run',
-                'race', 'parade', 'skier', 'team', 'game', 'stage', 'passenger', 'stadium', 
-                'fan', 'band','market','street', 'couple','audience', 'conference', 'marathon', 'lecture']
         
-        batch['txt'] = [
-            (sentence if any(word in sentence for word in must_include) else '' )
-            for sentence in batch['txt']
-        ]
-        condition_met_count = sum([ not string for string in batch['txt']])
-        '''
-
-        if dropout :# and condition_met_count < int((len(batch['txt'])*0.2)) :    
-            # 20% Dropout rate for promptless conditioning 
+        # 20% Dropout rate for promptless conditioning 
+        if dropout :
             for i in range(len(batch['txt'])):
                 if torch.rand(1) < 0.2 :
                     batch['txt'][i] = ''
         x, c = super().get_input(batch, self.first_stage_key, *args, **kwargs)
         control = batch[self.control_key]
         
-        #gaussian = batch['gaussian']
-        gaussian = control.detach().permute(0,3,1,2)
-        gaussian = Resize(size=(1536, 2048), 
-                          interpolation=InterpolationMode.NEAREST_EXACT)(gaussian)  
-        gaussian = gaussian * (512**2/(1536*2048))
-        
         if bs is not None:
-            control = control[:bs]
-            gaussian = gaussian[:bs]
+            control = control[:bs]            
 
         control = control.to(self.device)
         control = einops.rearrange(control, 'b h w c -> b c h w')
         control = control.to(memory_format=torch.contiguous_format).float()
-        
-        return x, dict(c_crossattn=[c], c_concat=[control], gaussian = gaussian)
+
+        if self.loss_key == 'gaussian' :
+            gaussian = control.detach().permute(0,3,1,2)
+            gaussian = Resize(size=(1536, 2048), 
+                            interpolation=InterpolationMode.BICUBIC)(gaussian)  
+            gaussian = gaussian * (512**2/(1536*2048))
+            if bs is not None:
+                gaussian = gaussian[:bs]
+            return x, {'c_crossattn' : [c], 'c_concat' : [control], f'{self.loss_key}' = gaussian }
+
+        elif self.loss_key == 'mean' :
+            mean = batch[self.loss_key]        
+            return x, {'c_crossattn' : [c], 'c_concat' : [control], f'{self.loss_key}' = mean }
+        else :
+            raise ValueError('Unvalid loss_key : Try "gaussian" or "mean" ')
 
     def apply_model(self, x_noisy, t, cond, *args, **kwargs):
 
@@ -724,54 +734,72 @@ class ControlLDM(LatentDiffusion):
             noise = default(noise, lambda: torch.randn_like(x_start))
         Lc, loss_dict, eps_t, x_t = super().p_losses(x_0, cond, t ,noise)
 
-        # fetch t<400 for counting loss. Paper says t>400 but this is logically wrong !!!
+        # fetch t<400 for counting loss. Paper says t>400 but this is wrong !!!
         mask = t < 400
         if all(not x for x in mask) :
             return Lc, loss_dict, Lc, torch.tensor(0)
         indices = mask.nonzero(as_tuple = True)[0]
 
-        noise = noise[indices]
-        x_start = x_start[indices]
-        x_t = x_t[indices]
-        eps_t = eps_t[indices]
-        t = t[indices]
-        gaussian = cond.pop('gaussian').to(self.device)[indices]
+        noise400 = noise[indices]
+        x_start400 = x_start[indices]
+        x_t400 = x_t[indices]
+        eps_t400 = eps_t[indices]
+        t400 = t[indices]
+        loss_gt = cond.pop(self.loss_key).to(self.device)[indices]
+
+        #TODO: during training write .grad_fn instead of grad_check. 
+        #      Check upper variables for loop in computational graph - In-place Operations 
 
         # reconstruct images
-        reconstructed = self.predict_reconstructed_from_noise(x_t=x_t, t=t, noise = eps_t)#self.predict_reconstructed_from_noise(x_t=eps_t, t=t, noise = noise)
+        l_reconstructed = self.predict_reconstructed_from_noise(x_t=x_t400, t=t400, noise = eps_t400)#self.predict_reconstructed_from_noise(x_t=eps_t, t=t, noise = noise)
         #check for gradient tracking (remove in future)
         if self.trainer.training :
-            assert reconstructed.requires_grad, '1'
-        reconstructed = self.decode_first_stage_train(reconstructed)
+            assert l_reconstructed.requires_grad, '1'
+        raw_reconstructed = self.decode_first_stage_train(l_reconstructed)
         #check for gradient tracking (remove in future)
         if self.trainer.training :
-            assert reconstructed.requires_grad, '2'
-        reconstructed = enhance_tensor(reconstructed)
+            assert raw_reconstructed.requires_grad, '2'
+        final_reconstructed = enhance_tensor(raw_reconstructed)
         #check for gradient tracking (remove in future)
         if self.trainer.training :
-            assert reconstructed.requires_grad, '3'
+            assert final_reconstructed.requires_grad, '3'
         # get densities 
-        if self.device != self.counter.device :
-            reconstructed = reconstructed.to(self.counter.device)
-        densities = self.counter.get_count(reconstructed, mode = mode).to(self.device)
+        #if self.device != self.counter.device :
+        #    reconstructed = reconstructed.to(self.counter.device)
+        densities = self.counter.get_count(final_reconstructed, mode = mode).to(self.device)
         #check for gradient tracking (remove in future)
         if self.trainer.training :
             assert densities.requires_grad
+        
         #compute loss
-
-        #TODO : try mse loss instead
-        closs_mse = mse_loss(densities,gaussian, reduction ='none').mean(dim=[1, 2, 3])
+        if self.loss_type == 'MSE' :
+            control_loss = mse_loss(densities, loss_gt, reduction ='none').mean(dim=[1, 2, 3])
+        elif self.loss_type == 'w2' :
+            control_loss = DLoss.wasserstein2(b_dmap = densities, b_gt = loss_gt, include_spread_loss = False)
+        elif self.loss_type == 'TV-class' :
+            control_loss = DLoss.TV_norm(b_dmap = densities, gt_dmap = loss_gt)
+        elif self.loss_type == 'TV-grad' :
+            control_loss = DLoss.grad_total_variation_norm_w_2norm_sq(b_dmap = densities, gt_dmap = loss_gt)
+        elif self.loss_type == 'kl' :
+            raise NotImplementedError('the Kullback-Leibler (kl) loss has not yet been implemented. ')
+        else :
+            raise ValueError(f'None existing {self.loss_type=}. ')
 
         #TODO : assigne time weight to each mean
         time_scaling = torch.tensor(list(map(time_scale,t))).to(self.device)
-
-        closs_mse = time_scaling * closs_mse
-        L_count_mse = closs_mse.mean()
+        time_scaled_control_loss = time_scaling * control_loss
+        Lcontrol = time_scaled_control_loss.mean()
 
         #TODO : replace with just true count-approx count. scale it down as this can be huge. 
-        closs_count =  abs(densities.sum(dim=(1,2,3)) - gaussian.sum(dim=(1,2,3)))
-        closs_count = time_scaling * closs_count
-        L_count_count = closs_count.mean()
+        if self.add_count_loss_too :
+            if self.loss_key == 'mean' :
+                counts = [tensor_points.shape[0] for tensor_points in loss_gt]
+            elif self.loss_key == 'gaussian' :
+                counts = loss_gt.sum(dim=(1,2,3))
+            Lcontrol_count = (time_scaling * abs(densities.sum(dim=(1,2,3)) - counts)).mean()
+        #closs_count =  abs(densities.sum(dim=(1,2,3)) - gaussian.sum(dim=(1,2,3)))
+        #closs_count = time_scaling * closs_count
+        #L_count_count = closs_count.mean()
         
         #TODO : add W2 loss and total variation
         #TODO: scale all loss terms by the time step we are at 
@@ -783,24 +811,24 @@ class ControlLDM(LatentDiffusion):
         #check for gradient tracking (remove in future)
         if self.trainer.training :
             #assert L_count.requires_grad
-            assert L_count_mse.requires_grad
+            assert Lcontrol.requires_grad
         
         #Total loss :
         #loss = Lc + self.magnitude_regularizer*L_count
 
-        loss = Lc + self.lambda_Cmse * L_count_mse + self.lambda_Ccount * L_count_count
+        loss = Lc + self.lambda_control * Lcontrol + self.lambda_count * Lcontrol_count
         
 
         #x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised 
 
-        x_0_ = x_start[0].clone().detach().permute(1,2,0)
-        x_t_ = x_t[0].clone().detach().permute(1,2,0)
-        noise_ = noise[0].clone().detach().permute(1,2,0)
-        eps_t_ = eps_t[0].clone().detach().permute(1,2,0)
-        t_ = t[0].item()
-        true_map = gaussian[0].clone().detach()
+        x_0_ = x_start400[0].clone().detach().permute(1,2,0)
+        x_t_ = x_t400[0].clone().detach().permute(1,2,0)
+        noise_ = noise400[0].clone().detach().permute(1,2,0)
+        eps_t_ = eps_t400[0].clone().detach().permute(1,2,0)
+        t_ = t400[0].item()
+        true_map = loss_gt[0].clone().detach()
         x_map = densities[0].clone().detach()
-        x_denoised = reconstructed[0].clone().detach().permute(1,2,0)
+        x_denoised = final_reconstructed[0].clone().detach().permute(1,2,0)
 
         b_plot = dict(
             x0 = x_0_,
@@ -834,10 +862,10 @@ class ControlLDM(LatentDiffusion):
         log_prefix = 'train' if self.training else 'val'
         loss_dict.update({f'{log_prefix}/loss_simple': loss})
         loss_dict.update({f'{log_prefix}/Lc': Lc.mean(),
-                            f'{log_prefix}/l*L_count_mse': L_count_mse*self.lambda_Cmse,
-                            f'{log_prefix}/l*L_count_count': L_count_count*self.lambda_Ccount})
+                            f'{log_prefix}/l*L_count_mse': L_count_mse*self.lambda_control,
+                            f'{log_prefix}/l*L_count_count': L_count_count*self.lambda_count})
         
-        return loss, loss_dict, Lc, L_count_mse, L_count_count
+        return loss, loss_dict, Lc, Lcontrol, Lcontrol_count
     
     def p_losses(self, x_start, cond, t, noise=None,*args, **kwargs) :
         
@@ -851,9 +879,11 @@ class ControlLDM(LatentDiffusion):
             true_count = int(true_map.sum().item())
             approx_count = int(x_map.sum().item())
             
-            x_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(x_map)
-            true_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(true_map)
-
+            x_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(x_map)  
+            if self.loss_key == 'gaussian' :
+                true_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(true_map).permute(1,2,0)
+            elif self.loss_key == 'mean' :
+                true_map = to_dmap(true_map)
             name = f'./saves/grid-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
             fig, axis = plt.subplots(2,4, figsize=(12,6))
 
@@ -866,7 +896,7 @@ class ControlLDM(LatentDiffusion):
                 axis[0,1].axis('off')
                 axis[0,1].set_title(f'x_denoised')
 
-                axis[0,2].imshow(true_map.permute(1,2,0).cpu())
+                axis[0,2].imshow(true_map.cpu())
                 axis[0,2].axis('off')
                 axis[0,2].set_title(f'true_map')
 
@@ -960,7 +990,7 @@ class ControlLDM(LatentDiffusion):
 
         gaussian = map.detach()
         gaussian = Resize(size=(1536, 2048), 
-                          interpolation=InterpolationMode.NEAREST_EXACT)(gaussian)  
+                          interpolation=InterpolationMode.BICUBIC)(gaussian)  
         gaussian = gaussian * (512**2/(1536*2048))
 
         batch = {'jpg' : torch.zeros((b,512,512,3), device=self.device), 'txt' : prompt, 'hint' : map}
