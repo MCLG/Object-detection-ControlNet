@@ -19,7 +19,7 @@ if gmm_path not in sys.path:
     sys.path.append(gmm_path)
 
 from ControlNetHome.tools.divergence_loss import DivergenceLoss
-from data import crop_around_center, rotate_image, get_dimensions, create_dir, clear_dir
+from utils import crop_around_center, rotate_image, get_dimensions, create_dir, clear_dir
 
 def density_map(points : list,
                 boxes  : list,

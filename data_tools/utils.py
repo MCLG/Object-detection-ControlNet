@@ -14,40 +14,7 @@ from scipy.io import loadmat
 from tqdm import tqdm 
 from torch.utils.data import Dataset
 
-'''
-(READ BEFORE USING)
-Assumes the following file ordering :
-    For NWPU (strict):
-        ROOT_DIR_NWPU
-            mats/
-            jsons/
-            images/
-    For JHU :
-        ROOT_DIR_JHU
-            train/
-                gt/
-                    (contains .txt files)
-                image_labels.txt
-                images/
-                    (contains .jpg)
-            val/
-                (idem)
-            test/
-                (idem)
 
-        Alternatively, you can set MapConfig.load_dir='' and organize as 
-        ROOT_DIR_NWPU
-            gt/
-                (contains .txt files)
-            image_labels.txt
-            images/
-                (contains .jpg)
-What this file does :
-    generates density map from images of crowds from the JHU and NWPU set.  Any dataset should work aswell, as long as the above mentioned structure is respected.
-    Will also crop all images to multiple smaller 512,512 images while checking that objects are located on the cropped images. This is to avoid the creation of irrelevant images.
-    The point of this procedure is to significantly augment the size of the data.
-    If for a jpg, no crop contains sufficient amount of objects,, we lower the required density of each crop and redo the procedure. If this does not work, we found a #tricky# image and print the id of that image.    
-'''
 DEVICE = torch.device(0)    #device for map generation and imag splitting
 BLIP_DEVICE = torch.device(0)   #device for caption
 ROOT_DIR_NWPU = '/net/vid-raxus/storage/deeplearning/datasets/nwpu/'
@@ -367,59 +334,6 @@ def spatial_content_nwpu(config : MapConfig
 
     return dict(image = img, density = dens)   
 
-'''
-import matplotlib.pyplot as plt 
-config = MapConfig()
-x = spatial_content_nwpu(config, '2551')
-imgs = get_cropped_images(x['image']) # C W H (PIL.Image)
-dens = get_cropped_images(rearrange(x['density'], 'C H W -> C W H'))
-
-print(f'{x["image"].size=}')
-print(f'{x["density"].shape=}')
-
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-
-fig1, axs = plt.subplots(2,1, figsize = (10,10))
-axs[0].imshow(x['image'])
-axs[0].axis('off')
-axs[1].imshow(x['density'].squeeze(0))
-axs[1].axis('off')
-plt.show()
-
-fig, axs = plt.subplots(5, 2, figsize=(10, 15))
-for i in range(5):
-    # First column: images from list1
-    img1 =imgs[i]
-    axs[i, 0].imshow(img1) # if tensor then permute 1,2,0 before plotting
-    axs[i, 0].axis('off')  # Hide axis
-    
-    # Second column: images from list2
-    axs[i, 1].imshow(dens[i].squeeze(0))
-    axs[i, 1].axis('off')  # Hide axis
-
-plt.tight_layout()
-plt.show()
-
-img = Image.open('/net/vid-raxus/storage/deeplearning/datasets/nwpu/images/2551.jpg')
-totens = ToTensor()
-img = rearrange(totens(img), 'C H W -> C W H')
-cropped_images = get_cropped_images(img,725)
-for tensor in cropped_images :
-    cropped_image_rot = rotate_image(tensor,80)
-    print(cropped_image_rot.shape)
-    image_rotated_cropped = crop_around_center(
-        cropped_image_rot,
-        *largest_rotated_rect(
-            cropped_image.shape[1],
-            cropped_image.shape[2],
-            np.deg2rad(80)
-        )
-    )
-    plt.imshow(image_rotated_cropped.permute(1,2,0))
-    plt.show()
-'''
-#%%
 def extract_smaller_pairs(img : torch.Tensor, dens : torch.Tensor,
  angles : Optional[list] = [45, -45, 90, -90, 135, -135, 180],
  random_flip = True ,
@@ -703,33 +617,6 @@ def create_data(config : MapConfig, blip_device = BLIP_DEVICE, id_digit_range = 
 #%%
 if __name__=="__main__" :
     #TODO: verify if about to create files already image exist and skip otherwise 
-    print(f'{config=}')  
-    create_data(config)
-
-'''
-we have fake positives 
-fold1 = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/map" 
-fold2 = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/img"
-csv_path = "/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet/train/label.csv"
-import csv
-content = []
-with open(csv_path, mode = 'r',newline='') as csvfile :
-    csv_reader = csv.DictReader(csvfile)
-    for row in csv_reader :
-        content.append(row)
-fake_pos = []
-for k,name in enumerate(os.listdir(fold1)):
-    tenspath = os.path.join(fold1,name)
-    map = torch.load(tenspath)
-    if map.sum().item()<1 :
-        print(f'{content[k].values()=}')
-        print(f'{name=}')
-        fake_pos.append(name)
-
-#total fake positives = 23222
-#total new data points = 128384
-#~ 20 % of the data
-
-content = {id : prmpt for line in content for id,prmpt in line.items()}
-
-'''
+    #print(f'{config=}')  
+    #create_data(config)
+    print('This is an old file, use "data_tools/load_dataset.py" instead. ')

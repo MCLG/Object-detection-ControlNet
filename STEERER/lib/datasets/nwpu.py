@@ -74,7 +74,7 @@ class NWPU(BaseDataset):
                     "label": 'jsons/' + image_id + '.json',
                     "name": image_id,
                 })
-        else:
+        else: 
             for item in self.img_list:
 
                 image_id, _, __ = item
