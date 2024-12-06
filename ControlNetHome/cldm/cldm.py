@@ -412,21 +412,23 @@ class ControlLDM(LatentDiffusion):
     def on_validation_epoch_end(self):
         
         #perform count guidance sampling with same image for reproducibility
-        id = '0055870'
-        control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/{id}.pt',map_location = self.device)
+        id_ = '041729'
+        control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/map/{id_}.pt',map_location = self.device)
+        control_mean = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/mean/{id_}.pt',map_location = self.device)
         control_map = torch.unsqueeze(control_map,0)
         sampling_data_csv = 'temp_sampling_process.csv'
         denoising_steps = 1000
-        '''
+        
         with torch.enable_grad():
             sample = self.count_guided_sampling(control_map,
-                prompt = ['a photograph of a crowd of people holding flags'], 
+                prompt = ['a photograph of a crowd of people holding flags'],
+                mean = [control_mean],
                 denoising_steps = denoising_steps, 
                 progress_track = sampling_data_csv)
         
         sample = enhance_tensor(sample)
-        sample_loc = f'./saves/CG_sample-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
-        graph_loc = f'./saves/CG_graph-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
+        sample_loc = f'./saves/CG_sample-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
+        graph_loc = f'./saves/CG_graph-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
         CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
 
         fig, axis = plt.subplots(1,2, figsize=(12,6))
@@ -435,7 +437,7 @@ class ControlLDM(LatentDiffusion):
         axis[1].imshow(sample.squeeze(0).permute(2,1,0).cpu())
         axis[1].axis('off')
         plt.savefig(sample_loc, bbox_inches='tight', pad_inches=0)
-        plt.close()'''
+        plt.close()
         
     # Initialize STEERER when training
     def on_train_start(self) :
@@ -805,14 +807,17 @@ class ControlLDM(LatentDiffusion):
                 print(f'Exception at plot_per_steps() --> Err={e}')
                 pass
 
-    def count_guided_sampling(self, 
-     dmap: torch.tensor,
-     prompt : List[str],
-     gradient_scale : float = .1, 
-     denoising_steps : int = 1000,
-     ddim_discretize = 'uniform',
-     unconditional_guidance_scale = .1,
-     progress_track : Optional[str]= None ) -> torch.Tensor :
+    def count_guided_sampling(
+        self, 
+        dmap: torch.tensor,
+        prompt : List[str],
+        mean : Optional[List[torch.tensor]] = None,
+        gradient_scale : float = .1, 
+        denoising_steps : int = 1000,
+        ddim_discretize = 'uniform',
+        unconditional_guidance_scale = .1,
+        progress_track : Optional[str]= None 
+        ) -> torch.Tensor :
         '''
         progress_track : savefilename as .csv file; will be saved in working dir.
         '''
@@ -827,19 +832,21 @@ class ControlLDM(LatentDiffusion):
             raise NotImplementedError(ddim_discretize)
         '''
 
-        timesteps = reversed([t for t in range(1,denoising_steps)])#reversed([t for t in range(1,denoising_steps)])
-        #last_n_steps, timesteps = timesteps[-2:][0], timesteps[:-2]
-        #timesteps = timesteps + [i for i in reversed(range(1,last_n_steps))]
+        timesteps = reversed([t for t in range(1,denoising_steps)])
         
         if isinstance(self.counter,STEERER_memory_alloc) :
             self.on_train_start()
         assert self.device == self.counter.device, f'This method requires both models to be on the same device for grad computation. '
-        assert isinstance(dmap, torch.Tensor), f'requires dmap to be a (3,512,512) torch tensor. You passed a {type(dmap)} ! '
+        assert isinstance(dmap, torch.Tensor), f'requires dmap to be a (1,512,512) torch tensor. You passed a {type(dmap)} ! '
+
+        if self.control_eval != 'mse' : 
+            assert mean is not None, f'requires mean positions to compute gradient w.r.t. {self.control_eval}. '
+
         if len(dmap.shape) == 3 :
             dmap = dmap.unsqueeze(0)
             b=1
         else :
-            assert dmap.shape[0] == len(prompt), f'Not enough prompts for dmaps given. Got {len(prompt)}, expected {dmap.shape[0]}. '
+            assert dmap.shape[0] == len(prompt) == len(mean), f'Not enough prompts for dmaps/means given. Got {len(prompt)}, expected {dmap.shape[0]} - {len(mean)}. '
             b = dmap.shape[0]
 
         if progress_track :
@@ -853,7 +860,6 @@ class ControlLDM(LatentDiffusion):
         batch = {'jpg' : torch.zeros((b,512,512,3), device=self.device), 'txt' : prompt, 'hint' : dmap}
         _, txt_encoded = super().get_input(batch, self.first_stage_key)
 
-        #dmap = einops.rearrange(dmap, 'b h w c -> b c h w')
         dmap = dmap.to(memory_format=torch.contiguous_format).float()
         cond = dict(c_crossattn=[txt_encoded], c_concat=[dmap])
         unconditional_cond = dict(c_crossattn=[txt_encoded], c_concat=None)
@@ -863,8 +869,7 @@ class ControlLDM(LatentDiffusion):
         bar = tqdm(timesteps,
             desc='steps',
             total=denoising_steps)
-        #bar_format="{l_bar}{bar} {n}/{total} steps - [{e_min}; {e_max}], {score} | {Closs} | {ycount}/{true_count}, [{te_min};{te_max}]")
-
+        
         for ts in timesteps :
             
             t = torch.full((b,), ts, device=self.device, dtype=torch.long)
@@ -887,21 +892,37 @@ class ControlLDM(LatentDiffusion):
             xt_reconstructed = self.predict_reconstructed_from_noise(x_t=xt, t=t, noise = eps_t) #noise = eps_t
             xt_512 = self.decode_first_stage_train(xt_reconstructed)
             xt_pretty = enhance_tensor(xt_512)
-
-            #plt.imshow(xt_pretty.clone().detach().cpu().squeeze(0).permute(2,1,0))
-            #plt.savefig(f'IMAGE-{ts}.png', bbox_inches='tight', pad_inches=0 )
-            #plt.close()
         
             ymap = self.counter.get_count(interpolate(xt_pretty, size=(1536,2048), mode = 'nearest'), mode='train')
-            #norm = torch.linalg.norm(gaussian - ymap, ord = 'fro', dim = (2,3))**2
-            norm = mse_loss(gaussian,ymap, reduction ='none').mean(dim=[1, 2, 3])#.mean() no mean in case we want batch wise sampling
             
-            #L_count = torch.linalg.norm( gaussian - ymap, ord = 'fro', dim = (2,3) )**2
-            #L_count = L_count.squeeze(1)
+            if self.control_eval == 'mse' :
+                norm = mse_loss(
+                    gaussian,
+                    ymap, 
+                    reduction ='none'
+                ).mean(dim=[1, 2, 3]) * self.scale_mse
+            elif self.control_eval == 'w2-count' :
+                norm = self.DivLoss.wasserstein2(
+                    b_dmap = ymap, 
+                    b_gt = mean, 
+                    include_spread_loss = False,
+                    space_scaler = None
+                ) * self.scale_w2
+            elif self.control_eval == 'w2-tv':
+                norm = self.DivLoss.wasserstein2(
+                    b_dmap = ymap, 
+                    b_gt = mean, 
+                    include_spread_loss = False,
+                    space_scaler = None
+                ) * self.scale_w2
+            elif self.control_eval == 'count-tv':
+                norm = self.DivLoss.TV_norm(
+                    dmap = ymap,
+                    gt_dmap = gaussian
+                ) * self.scale_tv
             
-            #L_count.backward()
-            norm.backward()
-            score = -xt.grad #TODO: multiply with optimal regularizer hoping it will give better results when using less denoising steps
+            norm.backward(torch.ones_like(norm)) #torch ones in there in case norm is not a scalar (multi sampling)
+            score = -xt.grad 
 
             with torch.no_grad() :
                 #experimental : trying to scale alpha with magnitude regularizer
@@ -918,7 +939,6 @@ class ControlLDM(LatentDiffusion):
                 sc_min.append(score.min().item())
                 sc_max.append(score.max().item())
                 alp.append(alpha)
-
 
             bar.set_postfix(
                 time = ts,
