@@ -9,7 +9,7 @@ if gp not in sys.path :
     sys.path.append(gp)
 
 project_root = os.path.abspath(os.path.dirname(__file__))
-steerer_loc = os.path.join(project_root, 'STEERER')
+steerer_loc = os.path.join(project_root, 'STEERER') #checkpoint at /net/vid-raxus/storage/deeplearning/users/luk02485/STEERER/exp/SHHB/MocHRBackbone_hrnet48/SHHB_final_2024-11-27-12-03
 if steerer_loc not in sys.path :
     sys.path.append(steerer_loc)
 
@@ -18,20 +18,38 @@ control_loc = os.path.join(project_root, 'ControlNetHome')
 if control_loc not in sys.path :
     sys.path.append(control_loc)
 
-from data import CCNetSet, MapConfig
+from data_tools.utils import CCNetSet, custom_collate
+
 import pytorch_lightning as pl
 
 from torch.utils.data import DataLoader, random_split#ConcatDataset
 from ControlNetHome.cldm.model import create_model, load_state_dict, create_model_og, load_state_dict_og
-from ControlNetHome.tools.utils import ckpt_search
 
 import torch.distributed as dist
+
+def ckpt_search() -> str :
+    '''
+    searches through lightning_logs for the models dict of the latest code version. 
+    '''
+    path = os.curdir + '/lightning_logs/version_*'
+    versions = glob.glob(path) 
+    checkpoints = []
+    while len(checkpoints) == 0:
+        try:
+            ver = versions.pop()
+        except Exception as e:
+            print(f'Error : {e} occured. No existing ckpt of previous model version exists !')
+            sys.exit(1)
+
+        checkpoints = glob.glob(ver + '/checkpoints/epoch=*')
+    return checkpoints[0]
+
 
 def main():
     
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3' #choose here the GPUs you wish to work with
     print(f'CUDA_VISIBLE_DEVICES={os.environ["CUDA_VISIBLE_DEVICES"]}')
-    AVAILABLE_GPU = [3]
+    AVAILABLE_GPU = [1]
 
     try:
         resume_path = ckpt_search()
@@ -39,20 +57,35 @@ def main():
         resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'#'./saves/checkpoints/crowdnet_dict-epoch-60.ckpt'#crowdnet_dict12epochs.ckpt'#'./models/control_sd15_ini.ckpt'
 
     #STEERER_path = '/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth'
-    #resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'
+    resume_path = './ControlNetHome/models/control_sd15_ini_v2.ckpt'
     batch_size = 2#16
     logger_freq = 300
     learning_rate = 2e-5#   SET TO PAPER VALUES
     sd_locked = True
     only_mid_control = False
 
-    # load data
-    Data = CCNetSet('/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/img',
-            '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map',
-            '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/label.csv')
+    # load data /net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train
+    Data = CCNetSet('/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/img',
+            '/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/map',
+            '/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/label.csv',
+            '/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/mean')
     train, val, test = random_split(Data, [0.7,0.2,0.1])
-    train_loader = DataLoader(train, num_workers=8, batch_size=batch_size, shuffle=True, pin_memory=True)
-    val_loader = DataLoader(val, num_workers=8, persistent_workers=False ,batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(
+                    train, 
+                    num_workers=8, 
+                    batch_size=batch_size, 
+                    shuffle=True, 
+                    pin_memory=True,
+                    collate_fn = custom_collate
+                    )
+    val_loader = DataLoader(
+                    val, 
+                    num_workers=8, 
+                    persistent_workers=False ,
+                    batch_size=batch_size, 
+                    shuffle=False,
+                    collate_fn = custom_collate
+                    )
 
     #training strategy :
     accumulate_grad_batches = 32#12 for 2 devices
@@ -62,8 +95,6 @@ def main():
     max_val_per_epoch = 64
     check_val_every_n_epoch = 4
     accumulation_steps = 10000
-    smooth_magnitude_tuning_start = 9 #start epoch (validation epoch). consider epoch count starts at 0 !
-    magnitude_reg_previous_importance = 0.8 
 
     #load model
     model = create_model_og('./ControlNetHome/models/cldm_v15_2.yaml').cpu()
@@ -76,14 +107,7 @@ def main():
 
     strat = "auto"
     
-    model.smooth_magnitude_tuning_start = smooth_magnitude_tuning_start
-    model.magnitude_reg_previous_importance = magnitude_reg_previous_importance
-
     print(f'[TRAINING CONFIG] \n'
-          '     loss balancing :\n'
-          f'        model.magnitude_regularizer={model.magnitude_regularizer.item()}\n'
-          f'        {model.smooth_magnitude_tuning_start=}\n'
-          f'        {model.magnitude_reg_previous_importance=}\n'
           '     trainer setting: \n'
           f'        {batch_size=}\n'
           f'        {accumulate_grad_batches=}\n'

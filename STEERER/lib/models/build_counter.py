@@ -191,6 +191,7 @@ class Baseline_Counter(nn.Module):
             #this is for an assert to track good behaviour in grad tracking during training :
             if grad_track_is_on :
                 assert all([t.requires_grad for t in in_list]), f'{grad_track_is_on=}, {inputs.requires_grad=} ... are we training ?'
+                #print(f'{[t.grad_fn for t in in_list]=}')
 
             self.counter_copy.load_state_dict(self.multi_counters.state_dict())
             freeze_model(self.counter_copy)
@@ -201,7 +202,7 @@ class Baseline_Counter(nn.Module):
             #this is for an assert to track good behaviour in grad tracking during training :
             if grad_track_is_on :
                 assert all([t.requires_grad for t in out_list]), f'{grad_track_is_on=}, {inputs.requires_grad=} ... are we training ?'
-
+                #print(f'{[t.grad_fn for t in out_list]=}')
             # import pdb
             # pdb.set_trace()
             

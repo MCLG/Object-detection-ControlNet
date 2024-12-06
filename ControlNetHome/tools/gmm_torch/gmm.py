@@ -170,17 +170,21 @@ class GaussianMixture(torch.nn.Module):
             if torch.isinf(self.log_likelihood.abs()) or torch.isnan(self.log_likelihood):
                 device = self.mu.device
                 # When the log-likelihood assumes unbound values, reinitialize model
+                
                 self.__init__(self.n_components,
                     self.n_features,
                     covariance_type=self.covariance_type,
                     mu_init=self.mu_init,
                     var_init=self.var_init,
                     eps=self.eps)
+                    
                 for p in self.parameters():
                     p.data = p.data.to(device)
+                
                 if self.init_params == "kmeans":
-                    self.mu.data, = self.get_kmeans_mu(x, n_centers=self.n_components)
-
+                    #self.mu.data, = self.get_kmeans_mu(x, n_centers=self.n_components)
+                    self.mu, = self.get_kmeans_mu(x, n_centers=self.n_components)
+        
             i += 1
             j = self.log_likelihood - log_likelihood_old
 
@@ -421,7 +425,7 @@ class GaussianMixture(torch.nn.Module):
             mu:         torch.FloatTensor
         """
         assert mu.size() in [(self.n_components, self.n_features), (1, self.n_components, self.n_features)], "Input mu does not have required tensor dimensions (%i, %i) or (1, %i, %i)" % (self.n_components, self.n_features, self.n_components, self.n_features)
-
+        
         if mu.size() == (self.n_components, self.n_features):
             self.mu = mu.unsqueeze(0)
         elif mu.size() == (1, self.n_components, self.n_features):
@@ -505,5 +509,5 @@ class GaussianMixture(torch.nn.Module):
                 center[c] = x[l2_cls == c].mean(dim=0)
 
             delta = torch.norm((center_old - center), dim=1).max()
-
+        
         return (center.unsqueeze(0)*(x_max - x_min) + x_min)

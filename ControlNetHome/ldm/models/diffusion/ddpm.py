@@ -403,7 +403,7 @@ class DDPM(pl.LightningModule):
             else:
                 loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
         else:
-            raise NotImplementedError("unknown loss type '{loss_type}'")
+            raise NotImplementedError(f"unknown loss type '{loss_type}'")
 
         return loss
 
@@ -871,6 +871,7 @@ class LatentDiffusion(DDPM):
         loss = self(x, c)
         self.log("global_step", self.global_step, batch_size=len(batch),
                  prog_bar=True, logger=True, on_step=True, on_epoch=False, sync_dist=True)
+        
         return loss
 
     def forward(self, x, c, *args, **kwargs):
@@ -920,7 +921,7 @@ class LatentDiffusion(DDPM):
         kl_prior = normal_kl(mean1=qt_mean, logvar1=qt_log_variance, mean2=0.0, logvar2=0.0)
         return mean_flat(kl_prior) / np.log(2.0)
 
-    def p_losses(self, x_start, cond, t, noise=None):
+    def p_losses(self, x_start, cond, t, noise=None, return_model_output = False):
 
         noise = default(noise, lambda: torch.randn_like(x_start))
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
@@ -961,8 +962,10 @@ class LatentDiffusion(DDPM):
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
         loss_dict.update({f'{prefix}/loss': loss})
-
-        return loss, loss_dict, eps, x_noisy
+        
+        if return_model_output :
+            return loss, loss_dict, eps, x_noisy
+        return loss, loss_dict
 
 
 

@@ -1,4 +1,3 @@
-#%%
 import os
 import glob 
 import sys 
@@ -11,27 +10,15 @@ import time
 from sklearn.cluster import DBSCAN, KMeans
 #from sklearn.mixture import GaussianMixture
 from torch.nn.functional import interpolate
-from gmm_torch.gmm import GaussianMixture
+from tools.gmm_torch.gmm import GaussianMixture
 from scipy.optimize import linear_sum_assignment
 from torch.autograd import Function
 
-def ckpt_search() -> str :
-    '''
-    searches through lightning_logs for the models dict of the latest code version. 
-    '''
-    path = os.curdir + '/lightning_logs/version_*'
-    versions = glob.glob(path) 
-    checkpoints = []
-    while len(checkpoints) == 0:
-        try:
-            ver = versions.pop()
-        except Exception as e:
-            print(f'Error : {e} occured. No existing ckpt of previous model version exists !')
-            sys.exit(1)
-
-        checkpoints = glob.glob(ver + '/checkpoints/epoch=*')
-    return checkpoints[0]
-
+# execute as  'python -m tools.divergence_loss path_to_train device' from /ControlNet/ControlNetHome/
+# example :
+'''
+     python -m tools.divergence_loss /net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train 1 1
+'''
 
 @torch.no_grad()
 def fast_mean_clustering(means : int, 
@@ -170,13 +157,20 @@ class DivergenceLoss() :
         var_init = var_init_.expand(-1, K, -1)
 
         np.random.set_state(np_random_state)
+
         return mu_init, var_init
 
     def extract_means(self, dmap: torch.Tensor ) -> Tuple[list,list] :
-        #if dmap.requires_grad is True :
-        #    dmap.retain_grad()
+        
+        # Given a tensor with values ranging between 0 and 1, will return the list of 2D-means of a GMM by performing EM-algo.
+        # The number of means is determined by the sum of the tensors pixel value (assumes you are passing a gaussian density map)
+        # Handles Batch inputs.
+        #
+        # Input : size B,1,512,512 or 1,512,512
+        # Output : (Tuple) : ([(N,2)] with len = B ) x 2 
+        #
+        # If the sum of the density map is less than < 1, it will handle it as a 0 map and return empty tensors.
 
-        #dmap = dmap.to(self.device)
         if len(dmap.shape) != 4 :
             dmap_ = dmap.unsqueeze(0)
         else : 
@@ -184,6 +178,7 @@ class DivergenceLoss() :
 
         og_surface = dmap_.shape[2]*dmap.shape[3]
         object_c = dmap_.sum(dim = (1,2,3))
+        
         dmap_low_res = interpolate(size=(self.cluster_dim,self.cluster_dim),mode= 'nearest-exact', input=dmap_)
         dmap_low_res_ = dmap_low_res * (og_surface/(self.cluster_dim**2))
 
@@ -195,28 +190,29 @@ class DivergenceLoss() :
         if self.extract_type == 'ggm-em': 
             means, covariances = [], []
             for k,non_z_elements in enumerate(non_zero_points) :
-                n_components = object_c[k].item()
+                n_components = round(object_c[k].item())#non_z_elements.shape[0]
+
+                if n_components != 0 :
+                    # it is necessary to make the initialization of gmm to be data dependent for gradient tracking                
+                    mu_init, var_init = self.fixed_state_moments_init(non_z_elements, n_components)
+                    
+                    gm = GaussianMixture(n_components=n_components,
+                        covariance_type = 'diag', 
+                        n_features = 2,
+                        mu_init = mu_init,     #torch.Tensor (1, k, d)
+                        var_init = var_init).to(self.device)      #torch.Tensor (1, k, d)
+                    
+                    gm.fit(non_z_elements)
+
+                    #gm_mu = self.closest_to_means(non_z_elements, gm.mu.clone().squeeze(0)) # Too slow !!!
+                    
+                    gm_mu = gm.mu.clone().squeeze(0) if len(gm.mu.shape) == 3 else gm.mu.clone()
+                    gm_var = gm.var.clone().squeeze(0)if len(gm.var.shape) == 3 else gm.var.clone()
+
+                else :
+                    gm_mu = torch.empty(size=(0,2), device = self.device)
+                    gm_var = torch.empty(size=(0,2), device = self.device)
                 
-                # it is necessary to make the initialization of gmm to be data dependent for gradient tracking
-                #TODO: memory x speed check with this 
-
-                mu_init, var_init = self.fixed_state_moments_init(non_z_elements, round(n_components))
-                
-                gm = GaussianMixture(n_components=round(n_components),
-                    covariance_type = 'diag', 
-                    n_features = 2,
-                    mu_init = mu_init,     #torch.Tensor (1, k, d)
-                    var_init = var_init).to(self.device)      #torch.Tensor (1, k, d)
-                
-                gm.fit(non_z_elements)
-
-                #gm_mu = self.closest_to_means(non_z_elements, gm.mu.clone().squeeze(0)) # Too slow !!!
-
-                gm_mu = gm.mu.clone().squeeze(0)
-                gm_var = gm.var.clone().squeeze(0)
-
-                #means = torch.stack((means,gm_mu), dim=0) if means is not None else gm_mu
-                #covariances = torch.stack((covariances,gm_var), dim=0) if covariances is not None else gm_var
                 if not self.eval_on_low_dim :
                     means.append(gm_mu * self.downscaling_factor)
                 else : 
@@ -227,29 +223,43 @@ class DivergenceLoss() :
 
         return means, covariances
 
-    def wasserstein2(self, b_dmap : torch.Tensor, b_gt : List[torch.Tensor], include_spread_loss = True) -> torch.Tensor:
+    def wasserstein2(
+        self, 
+        b_dmap : torch.Tensor, 
+        b_gt : List[torch.Tensor], 
+        include_spread_loss = True,
+        space_scaler : Optional[float] = None
+        ) -> torch.Tensor:
+
         # Input : b_dmap.shape B,1,N,2 
         #        b_gt : list of gt_tensors with length B.
         #               Each element is the mean of a gaussian cloud on the x,y grid. We assume gt covariances are fixed to diag(4,4)
         #        include_spread_loss : If False, will ignore the variance ||cov(b_dmap)^0.5 - cov(b_gt)^0.5||_frob^2 in the loss computation.
         #
         # Output : returns a tensor of shape B,1 which holds the average Wasserstein2 distance between two gaussian clouds from b_dmap and b_gt.
-                
+        #
+        # Optional : space_scaler : is a magnitude scaler to scale the dimension down. This would typically be used outside of this function in the
+        # training loop to scale down the importance of a loss term. We propose passing this directly inside this function.
+        # In that way we can prevent the values to explode for very large map sizes that are very far from the ground truth.
+        # This holds by linearity but increases numerical error. Worst-case W2 for 512,512 maps is around 104857600 so no overflow error and this can be ignored.
+
         assert b_dmap.shape[0] == len(b_gt), f'Batch mismatch between entries and gt : {b_dmap.shape=} and {len(b_gt)=}. '
         
         means,cov = self.extract_means(b_dmap)
 
-        #TODO :Check if sort before or not is faster :
-        #means,_ = torch.sort(means,dim=-2)
-        #gt,_ = torch.sort(b_gt,dim=-2)
-
         mean_averages_batch = torch.stack([
-            self.w2_average_over_means(gaus=means[i], gaus_gt=b_gt[i])[0]
+            self.w2_average_over_means(
+                gaus=means[i], 
+                gaus_gt=b_gt[i],
+                space_scaler=space_scaler
+                )[0]
             for i in range(b_dmap.shape[0])
         ])
         if include_spread_loss :
             cov_averages_batch = torch.stack([
-                self.w2_average_over_var(variances = cov[i])
+                self.w2_average_over_var(
+                    variances = cov[i],
+                    space_scaler=space_scaler)
                 for i in range(b_dmap.shape[0])
             ])
         else :
@@ -258,12 +268,15 @@ class DivergenceLoss() :
         
         return wasserstein_loss 
 
-    def w2_average_over_means(self, gaus : torch.Tensor, gaus_gt : torch.Tensor, 
-    eval_only_matching_means : bool = False,
-    unmatched_penalty_scale : float = .01) -> Tuple[torch.Tensor, list] :
+    def w2_average_over_means(
+        self, gaus : torch.Tensor, 
+        gaus_gt : torch.Tensor, 
+        eval_only_matching_means : bool = False,
+        unmatched_penalty_scale : float = .01,
+        space_scaler : Optional[float] = None ) -> Tuple[torch.Tensor, list] :
 
-        # TODO : what to do with ranges 0,512 ??? --> distance becomes huge
         # gaus, gaus_gt : two arrays containing the 2D means of a gaussian cloud. gaus_gt is the ground truth. 
+        #                 
         # This distinction makes a difference in the unmatched_mean_penalty mechanism
 
         # We need to fit the closest means from gaus and gaus_gt to one another and calucalte their squared euclidean norm.
@@ -274,13 +287,22 @@ class DivergenceLoss() :
         # Optional : 
         #   eval_only_matching_means : bool = False (default). If True then if N gaus match exactly with N gaus_gt and gaus_gt.len > N, the remaining 
         #                                                      means in gaus_gt will not be evaluated in the loss. If False, then the remaining means.                                        
-        
-        cost_matrix = torch.stack([torch.stack([torch.linalg.norm(a-b)**2 for b in gaus_gt]) for a in gaus])
-        indexes = linear_sum_assignment(cost_matrix.detach().cpu())
+        #   space_scaler : see wasserstein2() function for description.
 
-        id_gaus, id_gaus_gt = indexes
-        min_costs = torch.stack([cost_matrix[i1][i2] for i1, i2 in zip(id_gaus,id_gaus_gt)])
-        w2_mean = torch.mean(min_costs)
+        assert gaus_gt.shape[0] != 0, 'Empty true tensor passed for gt annotations !'
+
+        ls = space_scaler if space_scaler else 1.
+
+        if gaus.shape[0] == 0 :
+            id_gaus_gt = indexes = []
+            w2_mean = torch.tensor(0., device = self.device)
+        else :    
+            cost_matrix = torch.stack([torch.stack([torch.linalg.norm(a-b)**2 for b in gaus_gt]) for a in gaus])
+            indexes = linear_sum_assignment(cost_matrix.detach().cpu())
+
+            id_gaus, id_gaus_gt = indexes
+            min_costs = torch.stack([cost_matrix[i1][i2] for i1, i2 in zip(id_gaus,id_gaus_gt)])
+            w2_mean = torch.mean(min_costs) * ls
 
         if not eval_only_matching_means :
             unmatched_nb = gaus.shape[0] -gaus_gt.shape[0]
@@ -291,10 +313,11 @@ class DivergenceLoss() :
 
                 remove = torch.ones(gaus.shape[0], dtype = bool)
                 remove[id_gaus] = False         #mask selecting all indices but the ones used in w2_mean
-                penalty_means = gaus[remove]
+                penalty_means = gaus[remove] 
 
-                penalty = penalty_scale * torch.sum(torch.linalg.norm(penalty_means, dim=1)**2)/penalty_means.shape[0]
-                w2_mean += penalty
+                penalty = penalty_scale * torch.sum(
+                    torch.linalg.norm(penalty_means, dim=1)**2
+                    )/penalty_means.shape[0] * ls
 
             elif unmatched_nb < 0 :
                 # not enough means generated by model
@@ -302,24 +325,28 @@ class DivergenceLoss() :
 
                 remove = torch.ones(gaus_gt.shape[0], dtype = bool)
                 remove[id_gaus_gt] = False         #mask selecting all indices but the ones used in w2_mean
-                penalty_means = gaus_gt[remove]
 
-                penalty = penalty_scale * torch.sum(torch.linalg.norm(penalty_means, dim=1)**2)/penalty_means.shape[0]
-                w2_mean += penalty
+                penalty_means = gaus_gt[remove] 
+
+                penalty = penalty_scale * torch.sum(
+                    torch.linalg.norm(penalty_means, dim=1)**2
+                    )/penalty_means.shape[0] * ls
 
             else : 
                 #perfect matching !
-                pass
+                penalty = 0.
 
-        return w2_mean, indexes
+        return w2_mean + penalty, indexes
 
 
     def w2_average_over_var(self, variances : torch.Tensor) -> torch.Tensor :
         # We assumed the gt data has fixed variance 2,2. All gaussians have diagonal covariances.
 
+        ls = space_scaler if space_scaler else 1.
+
         tensor_of_twos = torch.tensor([2.,2.], device = self.device).repeat(variances.shape[0],1,1).squeeze(1)
         variances = variances.sqrt()
-        average_frob_dist = self.cov_loss(variances, tensor_of_twos)
+        average_frob_dist = self.cov_loss(variances, tensor_of_twos) * ls
         
         return average_frob_dist
 
@@ -341,27 +368,32 @@ class DivergenceLoss() :
     
     def TV_norm(self, dmap : torch.Tensor, gt_dmap : torch.Tensor) -> torch.Tensor :
         # computes the TV-norm between 2 density maps (as true density function maps)
-
-        assert len(dmap.shape) == 4 and dmap.shape == gt_dmap
         
-        true_dmap = dmap/torch.sum(dmap,dim=(2,3), keepdim = True)
-        gt_true_dmap = dmap/torch.sum(gt_dmap,dim=(2,3), keepdim = True)
-
-        dist = true_dmap - gt_true_dmap
+        assert len(dmap.shape) == 4 and dmap.shape == gt_dmap.shape
+        dmap_scalors = torch.sum(dmap,dim=(2,3), keepdim = True)
+        dmap_scalors_safe = torch.where(dmap_scalors != 0., dmap_scalors, other = torch.tensor(1., dtype=dmap.dtype, device=dmap.device))
+        true_dmap = dmap/dmap_scalors_safe 
+        gt_dmap_scalor = torch.sum(gt_dmap,dim=(2,3), keepdim = True)
+        gt_true_dmap = gt_dmap/gt_dmap_scalor
+     
+        dist = gt_dmap_scalor * abs(true_dmap - gt_true_dmap)
         TV_norm = 0.5*(torch.sum(dist, dim = (2,3)))
 
         return TV_norm  
 
 
-
-def main() :
+'''
+def test_dataset_memory_consumption(device : Optional[int] = 0, dataset_path : str = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/') :
     from tqdm import tqdm 
-    gpu = torch.device(0)
-    data_map_folder = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/'
+    gpu = torch.device(device) if device is not None else 'cpu'
+    data_map_folder = dataset_path
     max_count = 200
     max_memory_usage = 1000 #in Mb
     max_time = 9 #seconds
     
+    peak_time = 0
+    max_peak_mem = 0
+    itr = 5
     W2 = DivergenceLoss(downscaling_factor = 8, extract_type = 'ggm-em', device = gpu, eval_on_low_dim = False)
     results = dict()
     bar = tqdm(total = len([n for n in os.listdir(data_map_folder)]))
@@ -382,11 +414,15 @@ def main() :
         start_memory = torch.cuda.memory_allocated()  # Record memory usage before
 
         #Compute W2
-        out = W2.wasserstein2(b_dmap=batch, b_gt=gt_means, include_spread_loss = True)    
+        out = W2.wasserstein2(b_dmap=batch, b_gt=gt_means, include_spread_loss = False)    
         end = time.time()
 
         time_needed = end-start
+        if time_needed > peak_time :
+            peak_time = time_needed
         peak_memory = torch.cuda.max_memory_allocated()/(1024**2)
+        if peak_memory > max_peak_mem :
+            max_peak_mem = peak_memory
 
         if peak_memory > max_memory_usage :
             mem = {f'{map_file}' : {'peak_memory (Mb)' : peak_memory, 'count' : dmap.sum().item(), 'time (s)' : time_needed}}
@@ -394,8 +430,13 @@ def main() :
         elif time_needed > max_time :
             mem = {f'{map_file}' : {'peak_memory (Mb)' : peak_memory, 'count' : dmap.sum().item(), 'time (s)' : time_needed}}
             results.update(mem)
+        
+        if itr == 0 :
+            break
+        itr -= 1
         bar.update(1)
 
+    print(f'Results on your dataset : peak memory consumption : {max_peak_mem}, max time needed : {peak_time}')
     print(f'Saving results ...')
     import json
     file_path = os.path.join(os.getcwd(), 'benchmark_dataset_on_wasserstein2.json')
@@ -404,7 +445,124 @@ def main() :
     print(f"Dictionary saved to {file_path}")
 
     bar.close()
+'''
+def main() :
+    import argparse
+
+    parser = argparse.ArgumentParser(description=" ")
+    parser.add_argument("path_map_data", help="Path to the maps (.pt files). ")
+    parser.add_argument("device", help="device to use")
+    parser.add_argument("scale_loss", help="if '0' the w2 loss will not be scaled and will be huge for large density map space. If '1', will scale down for density_maps of size 512,512. ")
+    args = parser.parse_args()
+
+    test_data_set_memory_consumption(
+        device = torch.device(int(args.device)),
+        data_path = args.path_map_data,
+        scale = bool(args.scale_loss)
+        )
+
+def test_data_set_memory_consumption(
+    device : torch.device, 
+    data_path,
+    scale = True) :
+
+    torch.autograd.set_detect_anomaly(True)
+
+    space_scaler = 1.9073486328125e-05 if scale else 1.
+
+    mean_folder = os.path.join(data_path,'mean')
+    density_folder = os.path.join(data_path,'map')
+    
+    print(f'searching for largest count ... ')
+    device = torch.device(device)
+    W2 = DivergenceLoss(downscaling_factor = 8, extract_type = 'ggm-em', device = device, eval_on_low_dim = False)
+
+    max_error = 0
+    max_time = 0
+    peak_memory = 0
+    mem_list, time_list = [], []
+
+    from tqdm import tqdm
+    bar = tqdm(total = len(os.listdir(density_folder)))
+
+    files = os.listdir(density_folder)
+    for i in range(0, len(files), 2):
+        
+        # problematic files : file1='000395.pt', file2='000396.pt'
+        file1 = files[i]
+        file2 = files[i + 1] if i + 1 < len(files) else None
+        if file2 :
+        
+            density1 = torch.load(os.path.join(density_folder, file1)).to(device)
+            density2 = torch.load(os.path.join(density_folder, file2)).to(device)
+
+            mean1 = torch.load(os.path.join(mean_folder,file1)).to(device)
+            mean2 = torch.load(os.path.join(mean_folder,file2)).to(device)
+
+            batch1 = torch.stack([density1,density2])
+            batch2 = torch.stack([torch.zeros_like(density1),density2])
+
+            mean_batch = [mean1, mean2]
+
+            torch.cuda.reset_peak_memory_stats()
+            start_memory1 = torch.cuda.memory_allocated()
+            start1 = time.time()
+
+            batch1.requires_grad = True
+            batch1.retain_grad()
+
+            out1 = W2.wasserstein2(
+                    batch1, 
+                    mean_batch,
+                    include_spread_loss= False,
+                    space_scaler = space_scaler
+                )
+            out1.mean().backward()
+            out1 = torch.max(out1)
+
+            end1 = time.time()
+            time1 = end1 - start1
+            peak_memory1 = torch.cuda.max_memory_allocated()/(1024**2)
+            peak_memory = max(peak_memory, peak_memory1)
+            mem_list.append(peak_memory1)
+
+            torch.cuda.reset_peak_memory_stats()
+            start_memory2 = torch.cuda.memory_allocated()
+            start2 = time.time()
+
+            batch2.requires_grad = True
+            batch2.retain_grad()
+
+            out2 = W2.wasserstein2(
+                    batch2, 
+                    mean_batch,
+                    include_spread_loss= False,
+                    space_scaler = space_scaler
+                )
+            out2.mean().backward()
+            out2 = torch.max(out2)
+
+            end2 = time.time()
+            time2 = end2 - start2
+            peak_memory2 = torch.cuda.max_memory_allocated()/(1024**2)  
+            peak_memory = max(peak_memory, peak_memory2)
+            mem_list.append(peak_memory2)
+
+            max_error = max(max_error, out1.item(), out2.item())
+            max_time = max(max_time, time1, time2)
+
+            time_list.append(time1,time2)
+
+        else :
+            break
+
+        bar.update()
+    bar.close()
+    
+    print(f'{max_error=}, {peak_memory=}, {max_time=}')
+
 if __name__ == '__main__' :
+    main()
 
     '''
     Biggest counts :
@@ -467,8 +625,6 @@ if __name__ == '__main__' :
     #out.backward()
     #print(f'{tensor.grad=}')
 
-
-    main()
     '''gpu = torch.device(0)
     path_to_map = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/0000202.pt'
     dmap = torch.load(path_to_map).requires_grad_(True)

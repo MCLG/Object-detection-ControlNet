@@ -27,10 +27,18 @@ epsplots/
 inference.py 
 scrap.py 
 test.py 
-train_.py
+train_old.py
 train_log.txt 
 tuning_config.txt
+ControlNetHome/cldm/cldm_save.py
 
+ControlNetHome/dataset_text_.txt
+img_n_maps.png
+steerer_perf_w2.png
+steerer_performance.png
+steerer_trained_performance-50.png
+steerer_trained_performance.png
+test_counter/
 
 # gitignore from STEERER
 # created by virtualenv automatically

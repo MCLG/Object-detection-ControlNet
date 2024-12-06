@@ -147,6 +147,15 @@ After installing all dependencies, activate the conda environment `conda activat
 python train.py
 ```
 
+You can check the performance of the divergence losses on your dataset by running the following test :
+Go to `/ControlNet/ControlNetHome/` and run 
+
+```bash
+python -m tools.divergence_loss path_to_train device scale
+```
+
+where path_to_train is the path to the train/ folder containing map/,mean/,img/, device is the device to run this on (recommended to choose a GPU), scale: 1 or 0 if you wish to scale the W2-loss down to training values. The test return the maximum memory peak, time needed and largest error with a 0 density map, during a batch 2 forward and backward pass.
+
 ## References
 <a id="1">[1]</a> 
 Junyu-Xuelong, (2020). 

@@ -84,7 +84,6 @@ class CounterWrapper(Baseline_Counter):
         if img.shape[-2:] != torch.Size([1536,2048]):
             img = interpolate(img, size = (1536,2048), mode='bicubic')
         
-
         if mode == 'val' :
             with torch.no_grad():
                 return self(img, labels=None, mode='val')
@@ -93,49 +92,8 @@ class CounterWrapper(Baseline_Counter):
         else :
             print(f'unknown {mode=} passed to get_count. Options are "val" or "train". ')
             sys.exit(0)
-    #old
-    def get_count_(self, img: torch.Tensor, gaussians : Optional[list[torch.Tensor]] = None, mode = 'val') -> Tuple[float,torch.Tensor]:
-        '''
-        output tensor of Tuple will be of dimension 1536, 2048 and should not be changed in order to preserve density informations.
-        '''
-        
-        if img.shape[-2:] != torch.Size([1536,2048]):
-            img = self.reshape(img)
-        
-        if len(img.shape) == 3 :
-            img = img.unsqueeze(0).to(self.device)
+    
 
-        if len(img.shape) == 4 and img.shape[0] > 1 :
-            batch_dens = []
-            imgs_batch = torch.tensor_split(img,img.shape[0])
-            for k in range(len(imgs_batch)) :
-                res = self.get_count(imgs_batch[k], mode=mode)
-                batch_dens.append(res)
-                
-            return torch.cat(batch_dens, dim = 0)
-        
-        if gaussians is None :
-            labels = list()
-            labels.append(torch.zeros(1, 1536, 2048))
-            labels.append(torch.zeros(1, 768, 1024))
-            labels.append(torch.zeros(1, 384, 512))
-            labels.append(torch.zeros(1, 192, 256))
 
-            for i in range(len(labels)):
-                labels[i] = labels[i].to(self.device)
-        else :
-            labels = [map.to(self.device) for map in gaussians]
-        
-        if mode == 'val':
-            with torch.no_grad():
-                result = self(img, labels=labels, mode='val')
-        elif mode == 'train' :
-            #result = torch.utils.checkpoint.checkpoint(self.forward_wrapper, (img,labels,'val'), use_reentrant = True)
-            result = self(img, labels=None, mode='val')
-            #self(img, labels=None, mode='val')
 
-        #pre_den = result['pre_den']['1']
-        #pred_cnt = pre_den.sum().item()
-
-        return result
 

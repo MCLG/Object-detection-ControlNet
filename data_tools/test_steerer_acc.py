@@ -1,9 +1,35 @@
-
 import os, random 
-import matplotlib.pyplot as plt 
-from torchvision.transforms import Resize
-from ControlNetHome.tools.divergence_loss import to_dmap, DivergenceLoss
+import sys
+controlnetpath = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+pathtodivloss = f"{controlnetpath}/ControlNetHome/tools"
+if pathtodivloss not in sys.path :
+    sys.path.append(pathtodivloss)
+
+steererpath = f"{controlnetpath}"
+if steererpath not in sys.path :
+    sys.path.append(steererpath)
+
+controlnethomepath = f"{controlnetpath}/ControlNetHome"
+if controlnethomepath not in sys.path :
+    sys.path.append(controlnethomepath)
+
+from divergence_loss import to_dmap, DivergenceLoss
 from STEERER.steerer_inference import CounterWrapper
+import matplotlib.pyplot as plt 
+import torch
+from torchvision.transforms import Resize
+
+def find_largest() :
+    import json
+    largest = 0 
+    for k,file in enumerate(os.listdir("/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/SHHB/jsons")) :
+        jsonfile = json.load(open(os.path.join("/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/SHHB/jsons", file)))
+        x = int(jsonfile["human_num"])
+        if x > largest :
+            largest = x
+            print(f'{k=}')
+    print(f'{largest=}')
+
 
 def find_normalizing_constant(repetition : int = 10, nb_samples : int = 100, concat_to_size : int = 10 ) -> torch.float32 :
     pass

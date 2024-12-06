@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from scipy.io import loadmat
 from tqdm import tqdm 
 from torch.utils.data import Dataset
-
+from torch.utils.data._utils.collate import default_collate
 
 DEVICE = torch.device(0)    #device for map generation and imag splitting
 BLIP_DEVICE = torch.device(0)   #device for caption
@@ -57,7 +57,7 @@ class CCNetSet(Dataset):
 
         source = torch.permute(torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
         target = torch.permute(torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
-        target = target - 1 #input to range [-1,1]
+        target = 2*target - 1 #input to range [-1,1]
         
         prompt = item['prompt']
         
@@ -94,6 +94,27 @@ class CCNetSet(Dataset):
 
         plt.show()
 
+def custom_collate(batch):
+    # Custom collate_fn that handles batches with tensors with different dimension in the first position. 
+    default_collate_bool = (len(batch[0].keys()) < 4 )
+    if default_collate_bool :
+        return default_collate(batch)
+    jpg, txt, hint, mean = [], [], [], []
+    for item in batch :
+        jpg.append(item['jpg'])
+        txt.append(item['txt'])
+        hint.append(item['hint'])
+        mean.append(item['mean'])
+    jpg = torch.stack(jpg)
+    hint = torch.stack(hint)
+    new_batch = {
+        'jpg' : jpg,
+        'txt' : txt,
+        'hint' : hint,
+        'mean' : mean
+    }
+    return new_batch
+    
 def rotate_image(image : Union[Image.Image,torch.Tensor] , angle : float ) -> Union[Image.Image, torch.Tensor] :
     try :
         image = image.rotate(angle, expand = 1)
