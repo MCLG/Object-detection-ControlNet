@@ -44,6 +44,9 @@ def ckpt_search() -> str :
         checkpoints = glob.glob(ver + '/checkpoints/epoch=*')
     return checkpoints[0]
 
+#deprecation warning removed :
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.load.*weights_only=False.*")
 
 def main():
     

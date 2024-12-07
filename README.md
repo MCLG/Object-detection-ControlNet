@@ -125,10 +125,10 @@ Before training the model, you will need to process your data. We used the NWPU 
     -**jsons/**
 ```
 
-where ```ìmages``` provides the ```*.jpeg``` images, and two types of labels(```jsons``` and ```mats```). The points order is ```x, y```. To be specific, the contents of ```.mat``` files are consistent with the UCF-QNRF. The boxes labels is ```xmin, ymin, xmax, ymax```. Only one folder ```mats``` or ```jsons``` is required.
+where ```ìmages``` provides the ```*.jpeg``` images, and two types of labels(```jsons``` and ```mats```). The points order is ```x, y```. To be specific, the contents of ```.mat``` files are consistent with the UCF-QNRF. The boxes labels is ```xmin, ymin, xmax, ymax```. Only one folder ```mats``` or ```jsons``` is required. Run, the following :
 
 ```bash
- python load_nwpu.py RAW_DATA_LOC DATA_LOC DEVICE MINIMAL_DENSITY MAXIMAL_DENSITY
+ python -m data_tools.load_dataset.py RAW_DATA_LOC DATA_LOC DEVICE MINIMAL_DENSITY MAXIMAL_DENSITY
 ``` 
 
 where ```RAW_DATA_LOC``` is the location of the dataset, ```DATA_LOC``` is where you want to store the processed dataset. Both arguments are required. Optionally, you can set the ```DEVICE``` and the ```MINIMAL_DENSITY``` and ```MAXIMAL_DENSITY``` of objects contained on each pair image-density_map. Running this command will slice as much 512,512 images of the dataset and construct the associated gaussian density maps, along with the EM-Gaussian mixture model approximated means of the annotated gaussian clouds on the density maps. Running this file is long depending on the size of your dataset. You will be left will a directory
@@ -148,13 +148,31 @@ python train.py
 ```
 
 You can check the performance of the divergence losses on your dataset by running the following test :
-Go to `/ControlNet/ControlNetHome/` and run 
+Go to `/project_root_dir/ControlNetHome/` and run 
+
 
 ```bash
-python -m tools.divergence_loss path_to_train device scale
+python -m tools.divergence_loss path_to_train device scale_bool
 ```
 
 where path_to_train is the path to the train/ folder containing map/,mean/,img/, device is the device to run this on (recommended to choose a GPU), scale: 1 or 0 if you wish to scale the W2-loss down to training values. The test return the maximum memory peak, time needed and largest error with a 0 density map, during a batch 2 forward and backward pass.
+
+If you wish to train a version of STEERER with your already processed data, you can run this script which will copy the data and process it to the STEERER training format 
+
+```bash
+python -m data_tools.steerer_format_dataset.py arg1 arg2
+```
+
+where arg1 is the location of "DATA_LOC/" and arg2 the save location you want the data to be.
+
+All loss functions are dependant on your counting model and we wrote a script to test how accurate the counting model is w.r.t. TV/MSE/W2 losses. Run from the project_root_dir :
+
+```bash
+python -m STEERER.test_counter arg1 arg2 arg3
+```
+
+where arg1 is the location of your processed dataset, arg2 is a temporary location to store intermediate density maps, arg3 is the gpu to use.
+
 
 ## References
 <a id="1">[1]</a> 

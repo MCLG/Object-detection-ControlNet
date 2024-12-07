@@ -26,17 +26,12 @@ from ldm.util import default
 try :
     from STEERER.steerer_inference import CounterWrapper
 except :
-
-    project_root = os.path.abspath(os.path.dirname(__file__))
-    steerer_path = os.path.join(project_root, 'STEERER')
-    if steerer_path not in sys.path:
-        sys.path.append(steerer_path)
+    wkdir = os.path.dirname(os.path.realpath(__file__))
+    while not os.path.basename(wkdir) == 'lukas-diffusion-project' :
+        wkdir = os.path.dirname(wkdir)
+    if wkdir not in sys.path :
+        sys.path.append(wkdir)
     from STEERER.steerer_inference import CounterWrapper
-    '''
-    import sys 
-    steerer_loc = '/home/luk02485/development/ControlNet/STEERER'
-    if steerer_loc not in sys.path :
-        sys.path.append(steerer_loc)'''
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -412,33 +407,36 @@ class ControlLDM(LatentDiffusion):
     def on_validation_epoch_end(self):
         
         #perform count guidance sampling with same image for reproducibility
-        id_ = '041729'
-        control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/map/{id_}.pt',map_location = self.device)
-        control_mean = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/mean/{id_}.pt',map_location = self.device)
-        control_map = torch.unsqueeze(control_map,0)
-        sampling_data_csv = 'temp_sampling_process.csv'
-        denoising_steps = 1000
-        
-        with torch.enable_grad():
-            sample = self.count_guided_sampling(control_map,
-                prompt = ['a photograph of a crowd of people holding flags'],
-                mean = [control_mean],
-                denoising_steps = denoising_steps, 
-                progress_track = sampling_data_csv)
-        
-        sample = enhance_tensor(sample)
-        sample_loc = f'./saves/CG_sample-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
-        graph_loc = f'./saves/CG_graph-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
-        CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
+        if self.global_step != 0 :
+            id_ = '041729'
+            control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/map/{id_}.pt',map_location = self.device)
+            control_mean = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/mean/{id_}.pt',map_location = self.device)
+            control_map = torch.unsqueeze(control_map,0)
+            sampling_data_csv = 'temp_sampling_process.csv'
+            denoising_steps = 1000
+            
+            with torch.enable_grad():
+                sample = self.count_guided_sampling(control_map,
+                    prompt = [''],
+                    mean = [control_mean],
+                    denoising_steps = denoising_steps, 
+                    progress_track = sampling_data_csv)
+            
+            sample = enhance_tensor(sample)
+            if not os.path.exists('./saves') :
+                os.mkdir('./saves')
+            sample_loc = f'./saves/CG_sample-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
+            graph_loc = f'./saves/CG_graph-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}-{self.control_eval}.png'
+            CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
 
-        fig, axis = plt.subplots(1,2, figsize=(12,6))
-        axis[0].imshow(control_map.squeeze(0).permute(2,1,0).cpu())
-        axis[0].axis('off')
-        axis[1].imshow(sample.squeeze(0).permute(2,1,0).cpu())
-        axis[1].axis('off')
-        plt.savefig(sample_loc, bbox_inches='tight', pad_inches=0)
-        plt.close()
-        
+            fig, axis = plt.subplots(1,2, figsize=(12,6))
+            axis[0].imshow(control_map.squeeze(0).permute(2,1,0).cpu())
+            axis[0].axis('off')
+            axis[1].imshow(sample.squeeze(0).permute(2,1,0).cpu())
+            axis[1].axis('off')
+            plt.savefig(sample_loc, bbox_inches='tight', pad_inches=0)
+            plt.close()
+            
     # Initialize STEERER when training
     def on_train_start(self) :
         
@@ -645,29 +643,20 @@ class ControlLDM(LatentDiffusion):
 
         # reconstruct images
         l_reconstructed = self.predict_reconstructed_from_noise(x_t=x_t400, t=t400, noise = eps_t400)
-        #check for gradient tracking (remove in future)
-        if self.trainer.training :
-            assert l_reconstructed.requires_grad, '1'
-            #print(f'{l_reconstructed.grad_fn=}')
-        raw_reconstructed = self.decode_first_stage_train(l_reconstructed)
-        #check for gradient tracking (remove in future)
-        if self.trainer.training :
-            assert raw_reconstructed.requires_grad, '2'
-            #print(f'{raw_reconstructed.grad_fn=}')
-        final_reconstructed = enhance_tensor(raw_reconstructed)
-        #check for gradient tracking (remove in future)
-        if self.trainer.training :
-            assert final_reconstructed.requires_grad, '3'
-            #print(f'{final_reconstructed.grad_fn=}')
-        # get densities 
-        #if self.device != self.counter.device :
-        #    reconstructed = reconstructed.to(self.counter.device)
+        raw_reconstructed = self.decode_first_stage_train(l_reconstructed)        
+        final_reconstructed = enhance_tensor(raw_reconstructed)        
         densities = self.counter.get_count(final_reconstructed, mode = mode).to(self.device)
-        #check for gradient tracking (remove in future)
-        if self.trainer.training :
-            assert densities.requires_grad
-            #print(f'{densities.grad_fn=}')
         
+        '''
+            I was not able to find out why very rarely densities contain NaN values which messes up everything else below
+        '''
+        shallow_copy_densities = densities.detach()
+        check_for_NaN = torch.sum(shallow_copy_densities, dim =(1,2,3))
+        if not all(check_for_NaN == check_for_NaN) :
+            print(f'NaN was found in densities ... {check_for_NaN=}. \n')
+            return Lc, loss_dict
+
+
         #compute loss
         if self.control_eval == 'mse' :    #GAUSSIAN GT
             control_loss = mse_loss(
@@ -705,10 +694,6 @@ class ControlLDM(LatentDiffusion):
             aux_scale = self.scale_tv * 0.1
         else :
             raise ValueError(f'None existing {self.control_eval=}. ')
-        
-        if self.trainer.training :
-            assert control_loss.requires_grad
-            #print(f'{control_loss.grad_fn=}')
 
         # computing Lc + s*Lcontrol + s*Laux and time-scaling 
         time_scaling = torch.tensor(list(map(time_scale,t))).to(self.device)
@@ -722,13 +707,7 @@ class ControlLDM(LatentDiffusion):
         loss_dict.update({f'{log_prefix}/L_contr:': control_loss.clone().detach().mean().item() *l_scale})
         loss_dict.update({f'{log_prefix}/L_aux:': aux.clone().detach().mean().item() *aux_scale})
         loss_dict.update({f'{log_prefix}/L_{self.control_eval}:': time_scaled_loss.clone().detach().mean().item()})
-        
-        #check for gradient tracking (remove in future)
-        if self.trainer.training :
-            #assert L_count.requires_grad
-            assert loss.requires_grad
-            #print(f'{loss.grad_fn=}, {aux.grad_fn=}, {control_loss.grad_fn=}')
-        
+                
         x_0_ = x_start400[0].clone().detach().permute(1,2,0)
         x_t_ = x_t400[0].clone().detach().permute(1,2,0)
         noise_ = noise400[0].clone().detach().permute(1,2,0)
@@ -759,7 +738,8 @@ class ControlLDM(LatentDiffusion):
     def plot_per_steps(self, b_results : dict, per_global_step : int = 100) :
         
         if self.global_step % per_global_step == 0 and self.trainer.training :
-            
+            if not os.path.exists('./saves') :
+                os.mkdir('./saves')
             x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised = b_results.values()
             true_count = int(true_map.sum().item())
             approx_count = int(x_map.sum().item())

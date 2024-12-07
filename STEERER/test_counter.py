@@ -1,9 +1,9 @@
 import os 
 import torch
 import sys
-import sys
 import random
-sys.path.append('/home/luk02485/development/ControlNet/ControlNetHome')
+
+#sys.path.append('/home/luk02485/development/ControlNet/ControlNetHome')
 from STEERER.steerer_inference import CounterWrapper
 from torchvision.transforms import Resize
 import matplotlib.pyplot as plt 
@@ -11,16 +11,24 @@ import matplotlib.pyplot as plt
 from ControlNetHome.tools.divergence_loss import DivergenceLoss
 from STEERER.lib.models.build_counter import  freeze_model
 
-#execute 'python -m STEERER.test_counter' from ControlNet/
+#execute 'python -m STEERER.test_counter' from project_root_dir/
+# project_root_dir contains ControlNetHome and STEERER.
 
 def main() :
-    
-    DATAFOLDER = '/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train'   # location of your data
+    import argparse
+
+    parser = argparse.ArgumentParser(description=" ")
+    parser.add_argument("loc_data", help="Path to your processed data (map/img/mean) ")
+    parser.add_argument("loc_temp_file", help="temporary location to store files")
+    parser.add_arguemt("device", help="id of gpu to use")
+    args = parser.parse_args()
+
+    DATAFOLDER = args.loc_data #'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train'   # location of your data
     img_folder = os.path.join(DATAFOLDER,'img/')
     map_folder = os.path.join(DATAFOLDER, 'map/')
     mean_folder = os.path.join(DATAFOLDER, 'mean/')
-    saved_maps_dir = '/net/vid-raxus/storage/deeplearning/users/luk02485/dmap_test'     # temp folder to save approximated density maps
-    DEVICE = torch.device(0)
+    saved_maps_dir = args.loc_temp_file #'/net/vid-raxus/storage/deeplearning/users/luk02485/dmap_test'     # temp folder to save approximated density maps
+    DEVICE = torch.device(int(args.device))
     densities = [10, 50, 100]       # choose three ranges of densities 
     N = 25                          # how many samples each time
 
@@ -133,7 +141,7 @@ def plot_res(
     #ax.legend(title='Fruit color')
 
     plt.savefig(f'{local_save_folder}/tv_mse.png')
-    
+    print(f'Figures saved in {local_save_folder}/tv_mse.png')
     w2 = DivergenceLoss(downscaling_factor = 8, extract_type = 'ggm-em', device = DEVICE, eval_on_low_dim = False)
     w2_loss = []
     diag_scale = 1.9073486328125e-06
@@ -144,6 +152,7 @@ def plot_res(
         loss = w2.wasserstein2(dens_batch, mean_batch,include_spread_loss = False).mean().item()   
 
         w2_loss.append(loss*diag_scale)
+    print('Done !')
 
     fig, ax = plt.subplots(figsize=(10,6))
     densities = ['<10', '<50', '<100', '>100']
@@ -152,8 +161,8 @@ def plot_res(
     ax.set_ylabel(r'$\mathcal{W}_2$',fontsize=18)
 
     plt.savefig(f'{local_save_folder}/w2.png')
+    print(f'Figures saved in {local_save_folder}/w2.png')
 
-    print('Done !')
     f, ax = plt.subplots(3,4, figsize=(16,12))
     for k,key in enumerate(test_dic.keys()) :
 
@@ -191,6 +200,7 @@ def plot_res(
     ax[2,0].set_ylabel(f'approximated maps',fontsize=18)
     plt.tight_layout()
     plt.savefig(f'{local_save_folder}/samples.png') 
+    print(f'Figures saved in {local_save_folder}/samples.png')
 
 if __name__ == '__main__' :
     main()

@@ -14,7 +14,7 @@ from tools.gmm_torch.gmm import GaussianMixture
 from scipy.optimize import linear_sum_assignment
 from torch.autograd import Function
 
-# execute as  'python -m tools.divergence_loss path_to_train device' from /ControlNet/ControlNetHome/
+# execute as  'python -m tools.divergence_loss path_to_train_dir device scale_bool' from /Project_dir/ControlNetHome/
 # example :
 '''
      python -m tools.divergence_loss /net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train 1 1
@@ -190,7 +190,14 @@ class DivergenceLoss() :
         if self.extract_type == 'ggm-em': 
             means, covariances = [], []
             for k,non_z_elements in enumerate(non_zero_points) :
-                n_components = round(object_c[k].item())#non_z_elements.shape[0]
+
+                # delete try - except in the future.
+                try :
+                    n_components = round(object_c[k].item())#non_z_elements.shape[0]
+                except : 
+                    print(f'{object_c=}')
+                    print(f'{dmap=}')                    
+                    n_components = round(object_c[k].item())
 
                 if n_components != 0 :
                     # it is necessary to make the initialization of gmm to be data dependent for gradient tracking                
@@ -381,72 +388,8 @@ class DivergenceLoss() :
 
         return TV_norm  
 
-
-'''
-def test_dataset_memory_consumption(device : Optional[int] = 0, dataset_path : str = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/') :
-    from tqdm import tqdm 
-    gpu = torch.device(device) if device is not None else 'cpu'
-    data_map_folder = dataset_path
-    max_count = 200
-    max_memory_usage = 1000 #in Mb
-    max_time = 9 #seconds
-    
-    peak_time = 0
-    max_peak_mem = 0
-    itr = 5
-    W2 = DivergenceLoss(downscaling_factor = 8, extract_type = 'ggm-em', device = gpu, eval_on_low_dim = False)
-    results = dict()
-    bar = tqdm(total = len([n for n in os.listdir(data_map_folder)]))
-    for map_file in os.listdir(data_map_folder) :
-        path_to_map = os.path.join(data_map_folder,map_file)
-        dmap = torch.load(path_to_map).requires_grad_(True)
-
-        if dmap.sum().item() > max_count :
-            continue
-        batch = dmap.unsqueeze(0).to(gpu)
-
-        #Fetch approx gt as list of len=B containing tensors of shape K,2 
-        gt_means, _ = W2.extract_means(batch.detach().requires_grad_(False))
-
-        #performance tracking
-        start = time.time()
-        torch.cuda.reset_peak_memory_stats()
-        start_memory = torch.cuda.memory_allocated()  # Record memory usage before
-
-        #Compute W2
-        out = W2.wasserstein2(b_dmap=batch, b_gt=gt_means, include_spread_loss = False)    
-        end = time.time()
-
-        time_needed = end-start
-        if time_needed > peak_time :
-            peak_time = time_needed
-        peak_memory = torch.cuda.max_memory_allocated()/(1024**2)
-        if peak_memory > max_peak_mem :
-            max_peak_mem = peak_memory
-
-        if peak_memory > max_memory_usage :
-            mem = {f'{map_file}' : {'peak_memory (Mb)' : peak_memory, 'count' : dmap.sum().item(), 'time (s)' : time_needed}}
-            results.update(mem)
-        elif time_needed > max_time :
-            mem = {f'{map_file}' : {'peak_memory (Mb)' : peak_memory, 'count' : dmap.sum().item(), 'time (s)' : time_needed}}
-            results.update(mem)
-        
-        if itr == 0 :
-            break
-        itr -= 1
-        bar.update(1)
-
-    print(f'Results on your dataset : peak memory consumption : {max_peak_mem}, max time needed : {peak_time}')
-    print(f'Saving results ...')
-    import json
-    file_path = os.path.join(os.getcwd(), 'benchmark_dataset_on_wasserstein2.json')
-    with open(file_path, 'w') as json_file:
-        json.dump(results, json_file)
-    print(f"Dictionary saved to {file_path}")
-
-    bar.close()
-'''
 def main() :
+
     import argparse
 
     parser = argparse.ArgumentParser(description=" ")
