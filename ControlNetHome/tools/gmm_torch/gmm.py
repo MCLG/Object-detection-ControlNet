@@ -15,7 +15,17 @@ class GaussianMixture(torch.nn.Module):
     probabilities are shaped (n, k, 1) if they relate to an individual sample,
     or (1, k, 1) if they assign membership probabilities to one of the mixture components.
     """
-    def __init__(self, n_components, n_features, covariance_type="full", eps=1.e-6, init_params="kmeans", mu_init=None, var_init=None, seed = 42):
+    def __init__(
+        self, 
+        n_components, 
+        n_features, 
+        covariance_type="full", 
+        eps=1.e-6,
+        init_params="kmeans", 
+        mu_init=None, 
+        var_init=None,
+        cluster_dim = 64 ):
+
         """
         Initializes the model and brings all tensors into their required shape.
         The class expects data to be fed as a flat tensor in (n, d).
@@ -39,14 +49,8 @@ class GaussianMixture(torch.nn.Module):
             covariance_type: str
             eps:             float
             init_params:     str
-        added : 
-            seed : for reproducibility 
         """
         super(GaussianMixture, self).__init__()
-        self.seed = seed
-        if self.seed is not None:
-            np.random.seed(self.seed)
-            torch.manual_seed(self.seed)
 
         self.n_components = n_components
         self.n_features = n_features
@@ -65,10 +69,12 @@ class GaussianMixture(torch.nn.Module):
 
         self._init_params()
 
+        #added : works only for square space --> our case of use is a 64x64 grid
+        self.cluster_dim = float(cluster_dim)
 
     def _init_params(self):
         if self.mu_init is not None:
-            assert self.mu_init.size() == (1, self.n_components, self.n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+            assert self.mu_init.size() == (1, self.n_components, self.n_features), f"Input mu_init does not have required tensor dimensions (1, {self.n_components}, {self.n_features}). Got: {self.mu_init.size()=} "
             # (1, k, d)
             self.mu = self.mu_init.clone()#torch.nn.Parameter(self.mu_init, requires_grad=True)
             #print(f'{self.mu.requires_grad=}, {self.mu.data.requires_grad=}, {type(self.mu)=}, {type(self.mu.data)=}')
@@ -195,7 +201,6 @@ class GaussianMixture(torch.nn.Module):
 
         self.params_fitted = True
 
-
     def predict(self, x, probs=False):
         """
         Assigns input data to one of the mixture components by evaluating the likelihood under each.
@@ -210,6 +215,11 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
+        # DEBBUG #####
+        #if self.pi == 0 :
+        #    print(f'division by 0 !! at {__file__}, line : 213')
+        #    sys.exit(0)
+        #######################
         weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
 
         if probs:
@@ -299,6 +309,17 @@ class GaussianMixture(torch.nn.Module):
 
             return -.5 * (log_2pi - log_det + x_mu_T_precision_x_mu)
 
+
+
+
+
+
+
+
+
+
+
+        ##############################################################################
         elif self.covariance_type == "diag":
             mu = self.mu
             prec = torch.rsqrt(self.var)
@@ -306,7 +327,7 @@ class GaussianMixture(torch.nn.Module):
             log_det = torch.sum(torch.log(prec), dim=2, keepdim=True)
 
             return -.5 * (self.n_features * np.log(2. * pi) + log_p - log_det)
-
+        ####################################################################################
 
     def _calculate_log_det(self, var):
         """
@@ -334,7 +355,6 @@ class GaussianMixture(torch.nn.Module):
             log_resp:       torch.Tensor (n, k, 1)
         """
         x = self.check_size(x)
-
         weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
 
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
@@ -343,7 +363,7 @@ class GaussianMixture(torch.nn.Module):
         return torch.mean(log_prob_norm), log_resp
 
 
-    def _m_step(self, x, log_resp):
+    def _m_step(self, x_, log_resp):
         """
         From the log-probabilities, computes new parameters pi, mu, var (that maximize the log-likelihood). This is the maximization step of the EM-algorithm.
         args:
@@ -354,11 +374,17 @@ class GaussianMixture(torch.nn.Module):
             mu:         torch.Tensor (1, k, d)
             var:        torch.Tensor (1, k, d)
         """
-        x = self.check_size(x)
+        x_ = self.check_size(x_)
+
+        xmin, xmax = x_.min(), x_.max()
+        x = (x_-xmin) / (xmax-xmin)
+
 
         resp = torch.exp(log_resp)
+        #print(f'{resp.min()=}, {resp.max()=}')
 
         pi = torch.sum(resp, dim=0, keepdim=True) + self.eps
+        #print(f'{pi=}')
         mu = torch.sum(resp * x, dim=0, keepdim=True) / pi
 
         if self.covariance_type == "full":
@@ -367,14 +393,60 @@ class GaussianMixture(torch.nn.Module):
                             keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) + eps
 
         elif self.covariance_type == "diag":
+            
+
+
+
+
+
+            
+            #print(f'{resp.min()=}/{resp.max()=}, {mu.min()=}/{mu.max()=}, {x.min()=}/{x.max()=}')
+
+            #resp = torch.clamp(resp, min=1e-8, max=1.0)
+            #mu = torch.clamp(mu, min=1e-6, max = self.cluster_dim)
+            #x = torch.clamp(x, min=1e-8, max = self.cluster_dim)
+
+
+
+
+
+
+            #checking for NaN vals
+            if torch.isnan(x).any() or torch.isnan(resp).any():
+                print(f" Found {torch.isnan(x).any()=}, {torch.isnan(resp).any()=}")
+
+
             x2 = (resp * x * x).sum(0, keepdim=True) / pi
+
+            #checking for NaN vals
+            if torch.isnan(x2).any() or torch.isnan(pi).any():
+                print(f" Found {torch.isnan(x2).any()=}, {torch.isnan(pi).any()=}")
+
             mu2 = mu * mu
+            #checking for NaN vals
+            if torch.isnan(mu2).any() :
+                print(f" Found {torch.isnan(mu2).any()=} ")
+
             xmu = (resp * mu * x).sum(0, keepdim=True) / pi
+
+            #checking for NaN vals
+            if torch.isnan(xmu).any() :
+                print(f" Found {torch.isnan(xmu).any()=} ")
+
             var = x2 - 2 * xmu + mu2 + self.eps
+
+            #checking for NaN vals
+            if torch.isnan(var).any() :
+                print(f" Found {torch.isnan(var).any()=} ")
+
+            #print(f'{x2.min()=}, {x2.max()=}')            
+            #print(f'{mu2.min()=}, {mu2.max()=}')            
+            #print(f'{xmu.min()=}, {xmu.max()=}')
+            #print(f'{var.min()=}, {var.max()=}')
 
         pi = pi / x.shape[0]
 
-        return pi, mu, var
+        return pi, mu*(xmax-xmin) + xmin, var*(xmax-xmin) + xmin
 
 
     def __em(self, x):
@@ -388,6 +460,20 @@ class GaussianMixture(torch.nn.Module):
         
         _, log_resp = self._e_step(x)
         pi, mu, var = self._m_step(x, log_resp)
+
+        #check for nan in pi 
+        mask_pi = pi.detach() != pi.detach()
+        if mask_pi.any() :
+            print(f' found NaN val : {mask_pi.any()=}') 
+        #check for nan in mu 
+        mask_mu = mu.detach() != mu.detach()
+        if mask_mu.any() :
+            print(f' found NaN val : {mask_mu.any()=}') 
+        #check for nan var  
+        mask_var = var.detach() != var.detach()
+        if mask_var.any() :
+            print(f' found NaN val : {mask_var.any()=}') 
+
         self.__update_pi(pi)
         self.__update_mu(mu)
         self.__update_var(var)
@@ -467,7 +553,6 @@ class GaussianMixture(torch.nn.Module):
 
         self.pi.data = pi
 
-
     def get_kmeans_mu(self, x_, n_centers, init_times=50, min_delta=1e-3):
         """
         Find an initial value for the mean. Requires a threshold min_delta for the k-means algorithm to stop iterating.
@@ -480,8 +565,18 @@ class GaussianMixture(torch.nn.Module):
 
         #if len(x.size()) == 3:
         #    x = x.squeeze(1)
+        if len(x_.size()) == 3 :
+            x_ = x_.squeeze(1) 
+        else : 
+            assert len(x_.size()) == 2
         x_min, x_max = x_.min(), x_.max()
-        x = (x_.squeeze(1) - x_min) / (x_max - x_min)
+
+        ## DEBBUG ### remove in future ###############
+        if x_max == x_min :
+            print(f'division by 0 at {__file__}, line 487')
+            sys.exit(0)
+        ######################################
+        x = (x_ - x_min) / (x_max - x_min)
 
         min_cost = np.inf
 

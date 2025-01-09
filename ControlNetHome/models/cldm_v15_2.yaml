@@ -17,7 +17,7 @@ model:
     scale_factor: 0.18215
     use_ema: False
     only_mid_control: False
-    control_eval: "w2-count" #"mse"/ "w2-count" / "w2-tv" / "count-tv"  
+    control_eval: "w2-tv" #"mse"/ "w2-count" / "w2-tv" / "count-tv"  
     loss_downscaling_factor: 8
     counter_path: "STEERER/nwpu_pre_trained.pth"
     scale_mse: 10000000

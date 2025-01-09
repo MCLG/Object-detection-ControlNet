@@ -1,11 +1,11 @@
 import os
 import pprint
-# import _init_paths
+
 from . lib.core.Counter import Counter
 from . lib.utils.utils import create_logger, random_seed_setting
 from . lib.utils.modelsummary import get_model_summary
 from . lib.core.cc_function import test_cc
-# import datasets
+
 import torch
 
 from . lib.models.build_counter import Baseline_Counter
@@ -21,6 +21,11 @@ import matplotlib.pyplot as plt
 import torch
 from typing import Optional, Tuple
 from torch.nn.functional import interpolate
+
+'''
+    Contains Wrapper class for STEERER
+'''
+
 # pi3p install mmcv==2.2.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.3/index.html
 # install mmengine as described on the git #
 #Changes in doc include : 
@@ -33,7 +38,7 @@ class CounterWrapper(Baseline_Counter):
     def __init__(self,
                  freeze =  True, 
                  path = None, 
-                 path_to_config = '/home/luk02485/development/ControlNet/STEERER/configs/JHU_final.py', 
+                 path_to_config = './STEERER/configs/JHU_final.py', 
                  device = 'cpu',
                  *args, **kwargs): #self, config=None,weight=200, route_size=(64,64),device=None):
         
@@ -41,19 +46,15 @@ class CounterWrapper(Baseline_Counter):
         self.device = torch.device(device)
         config = Config.fromfile(path_to_config)
         super().__init__(config.network, config.dataset.den_factor, config.train.route_size, torch.device(device))
-        #self.reshape = T.Resize((1536, 2048), interpolation=T.InterpolationMode.BICUBIC)
 
         if path is None :
-            pretrained_dict = torch.load('/home/luk02485/development/ControlNet/STEERER/JHU_mae_54.5_mse_240.6.pth', map_location=self.device)
+            pretrained_dict = torch.load('./nwpu_pre_trained.pth', map_location=self.device)
         elif os.path.exists(path):
             pretrained_dict = torch.load(path, map_location= self.device)
         else :
             pprint(f'path:{path} to weights of counter not found. Check for path again or select None for base JHU-weights.')
 
         self.load_state_dict(pretrained_dict,strict=False)
-        #self.freeze_weight = False #should be set to True upon loading ControlNet-STEERER. Check with 'model.counter.freeze_weight'
-        #if freeze == True :
-        #    self.freeze()
         
     def instantiate_from_config(self, config):
         #symbolic method to replicate the loading of STEERER like stable diffusion
@@ -74,7 +75,8 @@ class CounterWrapper(Baseline_Counter):
         return self(img,labels = labels, mode = mode)
 
     def get_count(self, img : torch.Tensor, mode = 'val') -> torch.Tensor :
-        # assumes format B,C,H,W of input image
+        # assumes format B,C,H,W of input image. Computes the Gaussian density map of the tensor(s)
+        # if mode = 'train' then the model uses gradient checkpointing if img.requires_grad = True
         
         assert len(img.shape) > 2, f'input {img.shape=} but requires RGB 3,H,W or MAP 1,H,W shape of input tensor. '
 

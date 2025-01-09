@@ -51,16 +51,13 @@ class CCNetSet(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx]
-
         source_path = os.path.join(self.map_dir, item["id"])
         target_path = os.path.join(self.img_dir, item["id"])
-
-        source = torch.permute(torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
-        target = torch.permute(torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32),(2,1,0))
+        source = torch.load(source_path, map_location=torch.device('cpu')).to(dtype=torch.float32).permute(1,2,0)
+        target = torch.load(target_path, map_location=torch.device('cpu')).to(dtype=torch.float32).permute(1,2,0)
         target = 2*target - 1 #input to range [-1,1]
         
         prompt = item['prompt']
-        
         if self.mean_dir :
             mean_path = os.path.join(self.mean_dir, item["id"])
             means = torch.load(mean_path , map_location=torch.device('cpu')).to(dtype=torch.float32)

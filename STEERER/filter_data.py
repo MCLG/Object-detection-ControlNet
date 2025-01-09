@@ -22,7 +22,7 @@ def main() :
     parser = argparse.ArgumentParser(description=" ")
     parser.add_argument("loc_data", help="Path to your processed data (ends with .../train/) (map/img/mean) ")
     parser.add_argument("loc_new_data", help="Path to save your filtered data (map/img/mean) will create a new ./train file inside it. ")
-    parser.add_argument("conf", help="a number between 10 and 100. We recommend at least 10. This sets the accuracy to filter out files : if relative_abs_error > conf => remove file. ")
+    parser.add_argument("uncertainty", help="a number between 10 and 100. We recommend at least 10. This sets the accuracy to filter out files : if relative_abs_error > uncertainty => remove file. ")
     args = parser.parse_args()
 
     assert args.loc_data != args.loc_new_data, f'[WARNING] you were about to overwrite your data, with {args.loc_data=} and {args.loc_new_data=}. If thats what you wanted, delete this assert. '
@@ -31,12 +31,12 @@ def main() :
     if not os.path.exists(loc_new_data) :
         os.makedirs(loc_new_data, exist_ok=True)
 
-    assert 0 < int(args.conf) <= 100
-    confidence = int(args.conf)/100
+    assert 0 < int(args.uncertainty) <= 100
+    uncertainty = int(args.uncertainty)/100
 
     to_delete,keep = filter(
         loc_data = args.loc_data,
-        eps = confidence
+        eps = uncertainty
         )
 
     print(f"Number of files to remove: {len(to_delete)}, Number of files to keep: {len(keep)}, ")

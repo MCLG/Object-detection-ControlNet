@@ -3,6 +3,7 @@ import glob
 import sys 
 import torch 
 import numpy as np
+import torch.nn.functional as F
 from typing import Optional, Iterable, Tuple, List
 import matplotlib.pyplot as plt
 import time 
@@ -111,7 +112,7 @@ class DivergenceLoss() :
     device = torch.device('cpu'),
     eval_on_low_dim : bool = False):
 
-        # options :
+        # OPTIONS :
         #       downscaling_factor : for less memory usage and speed increase we downscale the input tensors to HxW // downscaling_factor
         #                            needs to be chosen s.t. max_count in an image in your dataset < (H.W // downscaling_factor)**2
         #       extract_type : fixed as this is the most efficient one and is differentiable
@@ -142,23 +143,53 @@ class DivergenceLoss() :
         
         return X[Xmin_to_mean_idx]
 
+    '''def diffbar_sampling(data : torch.Tensor, K : int, replace = False) :
+        
+        assert (len(data) >= K and not replace) or replace
+        if K == len(data) and not replace :
+            return data
+        
+        dist = Normal(0.,1.)
+        sampled_data = list()
+        while len(sampled_data) != K :
+            event_shape = torch.Size([len(data)])
+            samples = dist.rsample(event_shape)
+            for p, x in zip(samples, data) :
+                if p > .5 :
+                    sampled_data.append(x)
+                    if not replace :
+                        data.remove(x)
+                if len(sampled_data) == K :
+                    break
+        return torch.stack(sampled_data)'''
+
     def fixed_state_moments_init(self, data : torch.Tensor, K : int, seed = 42) -> Tuple[torch.Tensor] :
         # We need to fix the state in the init (and in gmm.py init) otherwise an exact reconstruction dmap
         # of the gt density map will not result in W2(gt_dmap, dmap) = 0, provided include_spread_loss = False.
-        np_random_state = np.random.get_state()
-        np.random.seed(seed)
+        #torch_random_state = torch.random.get_rng_state()
+        #torch.manual_seed(seed)
+        
+        d_min, d_max = data.min(), data.max()
+        data = (data.squeeze(1) - d_min) / (d_max - d_min)
 
-        rd_pick_init = np.random.randint(0, data.shape[0], size = K)
-        mu_init = data[rd_pick_init].clone().unsqueeze(0)
-
-        rd_pick_init = np.random.randint(0, data.shape[0], size = K)
-        d_init = data[rd_pick_init].clone().unsqueeze(0)
-        var_init_ = torch.mean((d_init-mu_init)**2, dim = 1, keepdim = True )
+        #rd_pick_init = np.random.randint(0, data.shape[0], size = K)
+        #mu_init = data[rd_pick_init].clone().unsqueeze(0)
+        #mu_init = self.diffbar_sampling(data=data, K=K).unsqueeze(0)
+        indices1 = torch.randperm(data.shape[0])[:K]
+        mu_init = data[indices1].unsqueeze(0)
+        
+        #rd_data = self.diffbar_sampling(data=data, K=data.shape[0])
+        indices2 = torch.randperm(data.shape[0])[:K]
+        rd_data = data[indices2].unsqueeze(0)
+        
+        #rd_pick_init = np.random.randint(0, data.shape[0], size = K)
+        #d_init = data[rd_pick_init].clone().unsqueeze(0)
+        var_init_ = torch.mean((rd_data-mu_init)**2, dim = 1, keepdim = True )
         var_init = var_init_.expand(-1, K, -1)
 
-        np.random.set_state(np_random_state)
+        #torch.random.manual_seed(torch_random_state)
 
-        return mu_init, var_init
+        return mu_init*(d_max - d_min) + d_min, var_init*(d_max - d_min) + d_min
 
     def extract_means(self, dmap: torch.Tensor ) -> Tuple[list,list] :
         
@@ -198,18 +229,36 @@ class DivergenceLoss() :
                     print(f'{object_c=}')
                     print(f'{dmap=}')                    
                     n_components = round(object_c[k].item())
+                
+                if n_components != 0 and non_z_elements.numel() > 0:
 
-                if n_components != 0 :
+                    if non_z_elements.shape[0] < n_components :
+                        print(f'Dimension reduction in DivergenceLoss.extracting_means resulted in more centroids to data points to map ! Setting centroids to available data')
+                        n_components = non_z_elements.shape[0]
+
                     # it is necessary to make the initialization of gmm to be data dependent for gradient tracking                
                     mu_init, var_init = self.fixed_state_moments_init(non_z_elements, n_components)
                     
+                    #print(f'{mu_init.shape=}, {n_components=}, {non_z_elements.shape=}')
+
+                    #save states
+                    #np_state = np.random.get_state()
+                    #torch_state = torch.random.get_rng_state()
+                    #np.random.seed(42)
+                    #torch.manual_seed(42)
+                
                     gm = GaussianMixture(n_components=n_components,
                         covariance_type = 'diag', 
                         n_features = 2,
                         mu_init = mu_init,     #torch.Tensor (1, k, d)
-                        var_init = var_init).to(self.device)      #torch.Tensor (1, k, d)
+                        var_init = var_init,
+                        cluster_dim = self.cluster_dim).to(self.device)      #torch.Tensor (1, k, d)
                     
                     gm.fit(non_z_elements)
+
+                    # set the states back to normal
+                    #torch.random.set_rng_state(torch_state)
+                    #np.random.set_state(np_state)
 
                     #gm_mu = self.closest_to_means(non_z_elements, gm.mu.clone().squeeze(0)) # Too slow !!!
                     
@@ -253,7 +302,7 @@ class DivergenceLoss() :
         assert b_dmap.shape[0] == len(b_gt), f'Batch mismatch between entries and gt : {b_dmap.shape=} and {len(b_gt)=}. '
         
         means,cov = self.extract_means(b_dmap)
-
+        
         mean_averages_batch = torch.stack([
             self.w2_average_over_means(
                 gaus=means[i], 
@@ -273,7 +322,7 @@ class DivergenceLoss() :
             cov_averages_batch = torch.zeros(mean_averages_batch.shape, device = self.device)
         wasserstein_loss = mean_averages_batch + cov_averages_batch
         
-        return wasserstein_loss 
+        return wasserstein_loss, means
 
     def w2_average_over_means(
         self, gaus : torch.Tensor, 
@@ -321,7 +370,12 @@ class DivergenceLoss() :
                 remove = torch.ones(gaus.shape[0], dtype = bool)
                 remove[id_gaus] = False         #mask selecting all indices but the ones used in w2_mean
                 penalty_means = gaus[remove] 
-
+                
+                # debbug ############
+                #if penalty_means.shape[0] == 0 :
+                #    print(f'DIVISION BY 0 at {__file__} line 327')
+                #    sys.exit(0)
+                ########################
                 penalty = penalty_scale * torch.sum(
                     torch.linalg.norm(penalty_means, dim=1)**2
                     )/penalty_means.shape[0] * ls
@@ -334,6 +388,12 @@ class DivergenceLoss() :
                 remove[id_gaus_gt] = False         #mask selecting all indices but the ones used in w2_mean
 
                 penalty_means = gaus_gt[remove] 
+                
+                # debbug ############
+                #if penalty_means.shape[0] == 0 :
+                #    print(f'DIVISION BY 0 HERE')
+                #    sys.exit(0)
+                ########################
 
                 penalty = penalty_scale * torch.sum(
                     torch.linalg.norm(penalty_means, dim=1)**2
@@ -507,117 +567,4 @@ def test_data_set_memory_consumption(
 if __name__ == '__main__' :
     main()
 
-    '''
-    Biggest counts :
-    0000001.pt 122c
-    0000036.pt
-    0000202.pt 608c     <-- 
-    0000231.pt 629c
-    0000238.pt 1118c
-    0000574.pt 1360c
-    0000576.pt 1516c
-    0000577.pt 1520c
-    0007843.pt 1697c
-    0015581.pt 3646c
-    '''
-    #To be included in thesis :::
-    '''
-    i have two arrays of dimension N,2 and M,2 which represents gaussian means. 
-    I wish to compute the wasserstein2 distance (ignoring the variance for now) of those gaussians using the closed form 
-    W2(g1,g2) = ||mu1-mu2||_2^2. this has to be done for each element in those arrays and then we average the distances.
-     Small issue : the arras are not sorted so we have to determine which mu1 corresponds to which mu2 in both arrays. 
-     I have solved this by solving a  minimum weight matching problem in bipartite graphs where the edges are induced by the matrix 
-          C = [ || gaus[i]-gaus_gt[j] ||_2^2 ]_i,j
-    This works. and it computes the W2 distances for each gaussian. 
-    However one issue remains. What hsould i do if N>M or M<N ? I cannot just ignore it because i will use this as a loss function to my model
-     and if i ignore then the model can just generalize by not generating any mean in gaus_gt (output of model, gaus ground truth). 
-     I cannot also set a point, say the origin 0,0 as a reference and the remainin M-N or N-M gaussians of g2 or g1 to average the distances of them to the origin. 
-     This could also lead to a generalization where my model only produces gaus_gt to be 0,0 centered. 
-     Finally maybe we penalize with the ground truth ? If say K are unmatched in gaus (ground truth) then yes 
-     i can average with the origin and this would make sense. However what to do if instead K are unmatched in gaus_gt, 
-     i.e. more generated means that actual ground truth means ?
-    '''
-
-    '''w2losser = d_loss(l_type = 4, downscaling_factor = 8, extract_type = 'ggm-em')
-
-    gaus = torch.randint(0,513,size=(51,2)).float()
-    gt = torch.randint(0,513,size=(27,2)).float()
-    cost,indexes = w2losser.w2_average_over_means(gaus,gt)
-    print(f'{gaus=}')
-    print(f'{gt=}')
-    print(f'{cost=}')
-    print(f'{type(cost)=}')
-    print(f'{indexes=}')
-    covariances = torch.randint(0,6,size=(51,2)).float().to(0)
-    cov_wasserstein = w2losser.w2_average_over_var(covariances)
-    print(f'{cov_wasserstein=}')'''
-
-    #tensor = torch.zeros(size=(1,1,5,5))
-    #tensor[0,0,1,1] = 5.
-    #tensor[0,0,4,4] = 2.
-    #tensor[0,0,2,4] = 1.
-    #tensor[0,0,3,4] = 7.
-    #tensor[0,0,1,4] = 99.
-    #tensor[0,0,4,2] = 2000.
-    #tensor.requires_grad = True
-    #print(f'{tensor.requires_grad=}')
-    #modification = AutogradPixelSelection.apply(tensor.squeeze(1)[0])
-    #print(f'{modification.requires_grad=}')
-    #out = (modification**2-78.).sum()
-    #print(f'{modification=}')
-    #out.backward()
-    #print(f'{tensor.grad=}')
-
-    '''gpu = torch.device(0)
-    path_to_map = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/0000202.pt'
-    dmap = torch.load(path_to_map).requires_grad_(True)
-
-    path_to_map2 = '/net/vid-raxus/storage/deeplearning/users/luk02485/ccnet_fixed_var_4/train/map/0000036.pt'
-    dmap2 = torch.load(path_to_map2).requires_grad_(True)
-
-    losser = DivergenceLoss(l_type = 4, downscaling_factor = 8, extract_type = 'ggm-em', device = gpu, eval_on_low_dim = False)
-
-    # create Batch B,1,512,512
-    batch = torch.stack((dmap,dmap2),dim=0).to(gpu)
-    batch.retain_grad() #for test
-    print()
-
-    #Fetch approx gt as list of len=B containing tensors of shape K,2 
-    means, _ = losser.extract_means(batch.detach().requires_grad_(False))
-
-    #performance tracking
-    start = time.time()
-    torch.cuda.reset_peak_memory_stats()
-    start_memory = torch.cuda.memory_allocated()  # Record memory usage before
-
-    #batch = torch.rand(size=(1,1,512,512), requires_grad = True ).to(gpu)
-    #batch.retain_grad()
-    #means, _ = losser.extract_means(batch.detach().requires_grad_(False))
-
-    #Compute W2
-    out = losser.wasserstein2(b_dmap=batch, b_gt=means, include_spread_loss = True)    
-
-    end = time.time()
-    peak_memory = torch.cuda.max_memory_allocated()/(1024**2)
-
-    print(f'{peak_memory=}Mb')
-    print(f'time={end-start}s')
-    print(f'w2={out}')
-
-    loss = torch.mean(out)
-    loss.backward()
     
-    print(f' : {batch.grad=}, {(torch.all(batch.eq(0)))=}')
-    
-    f, ax = plt.subplots(1,4,figsize=(12,6))
-    ax[0].imshow(dmap.detach().cpu().squeeze(0))
-
-    dmap_r = to_dmap(means[0].squeeze(0),size=(512,512))
-    ax[1].imshow(dmap_r.detach().cpu())
-
-    dmap_r = to_dmap(means[1].squeeze(0),size=(512,512))
-    ax[2].imshow(dmap_r.detach().cpu())
-
-    ax[3].imshow(dmap2.detach().cpu().squeeze(0))
-    plt.savefig('./k_cluster.png')
-    '''

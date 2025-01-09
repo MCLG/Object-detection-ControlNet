@@ -2,7 +2,6 @@ import einops
 import torch
 import torch as th
 import torch.nn as nn
-import warnings
 
 from ldm.modules.diffusionmodules.util import (
     conv_nd,
@@ -126,7 +125,7 @@ class ControlNet(nn.Module):
             disable_self_attentions=None,
             num_attention_blocks=None,
             disable_middle_self_attn=False,
-            use_linear_in_transformer=False,
+            use_linear_in_transformer=False
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -370,6 +369,7 @@ class ControlLDM(LatentDiffusion):
         scale_w2,
         scale_tv,
         scale_count,
+        clip_val : float = 1.,
         *args, **kwargs
     ) :
 
@@ -379,6 +379,7 @@ class ControlLDM(LatentDiffusion):
         self.control_key = control_key
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
+        self.clip_val = clip_val
 
         self.counter = STEERER_memory_alloc().to(self.device)
         self.counter_dict = counter_path
@@ -406,11 +407,75 @@ class ControlLDM(LatentDiffusion):
     @torch.no_grad()
     def on_validation_epoch_end(self):
         
+        if not os.path.exists('./saves') :
+            os.mkdir('./saves')
+
+        dmap = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/map/029002.pt').to(self.device).permute(1,2,0).unsqueeze(0)
+        img = torch.load('/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/img/029002.pt').to(self.device).unsqueeze(0)
+        prompt = ['a group of people sitting on chairs in a room']
+        batch = {
+            'jpg' : torch.randn(1,512,512,3),
+            'hint' : dmap,
+            'txt' : prompt,
+            'mean' : [torch.randn(1,2)*512]
+        }
+        z, c = self.get_input(batch, self.first_stage_key, dropout = False)
+        c_cat, c = c["c_concat"][0], c["c_crossattn"][0]
+        cond = {"c_concat": [c_cat], "c_crossattn": [c]}
+
+        strength = 1. #does not work outside of interval [0,1]
+        guess_mode = False
+        #model.control_scales = [strength * (0.825 ** float(12 - i)) for i in range(13)] if guess_mode else ([strength] * 13)  # from ControlNetGit
+        ddim_sampler = DDIMSampler(self)
+        ddim_steps = 50
+        b, c, h, w = cond["c_concat"][0].shape
+        shape = (self.channels, h // 8, w // 8)
+        batch_size=1
+        samples, _ = ddim_sampler.sample(
+            ddim_steps, 
+            batch_size, 
+            shape, 
+            cond,
+            x0 = torch.randn(1,4,64,64),
+            unconditional_guidance_scale = 9,
+            verbose=False,
+            eta = 0.1,
+            temperature=1, 
+            noise_dropout = 0.2 #prob between 0 and 1
+            )
+        samples = self.decode_first_stage(samples)
+        samples = enhance_tensor(samples)
+        reconstructed_density_map = self.counter.get_count(samples)
+        dmap = dmap.permute(0,3,1,2)
+
+        samples = interpolate(samples, size=(1200, 1200), mode='bicubic', align_corners=False)
+        dmap = interpolate(dmap, size=(1200, 1200), mode='bicubic', align_corners=False)
+        img = interpolate(img, size=(1200, 1200), mode='bicubic', align_corners=False)
+        reconstructed_density_map = interpolate(reconstructed_density_map, size=(1200, 1200), mode='bicubic', align_corners=False)
+        
+        fig, axis = plt.subplots(2,2, figsize=(12,12))
+        axis[0,0].imshow(img.squeeze(0).permute(1,2,0).cpu())
+        axis[0,0].axis('off')
+
+        axis[0,1].imshow(samples.squeeze(0).permute(1,2,0).cpu())
+        axis[0,1].axis('off')
+        axis[1,0].imshow(dmap.squeeze(0).permute(1,2,0).cpu())
+        axis[1,0].axis('off')
+        axis[1,1].imshow(reconstructed_density_map.squeeze(0).permute(1,2,0).cpu())
+        axis[1,1].axis('off')
+        fig.tight_layout()
+
+        plt.savefig(
+            f'./saves/ddim-samples-ep{self.current_epoch}-step-{self.global_step}-{self.control_eval}.png',
+            bbox_inches='tight', pad_inches=0)
+        plt.close()
+
+        '''
         #perform count guidance sampling with same image for reproducibility
         if self.global_step != 0 :
-            id_ = '041729'
-            control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/map/{id_}.pt',map_location = self.device)
-            control_mean = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/ProcessedData/train/mean/{id_}.pt',map_location = self.device)
+            id_ = '029002'
+            control_map = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/map/{id_}.pt',map_location = self.device)
+            control_mean = torch.load(f'/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/mean/{id_}.pt',map_location = self.device)
             control_map = torch.unsqueeze(control_map,0)
             sampling_data_csv = 'temp_sampling_process.csv'
             denoising_steps = 1000
@@ -430,13 +495,14 @@ class ControlLDM(LatentDiffusion):
             CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
 
             fig, axis = plt.subplots(1,2, figsize=(12,6))
-            axis[0].imshow(control_map.squeeze(0).permute(2,1,0).cpu())
+            axis[0].imshow(control_map.squeeze(0).permute(1,2,0).cpu())
             axis[0].axis('off')
-            axis[1].imshow(sample.squeeze(0).permute(2,1,0).cpu())
+            axis[1].imshow(sample.squeeze(0).permute(1,2,0).cpu())
             axis[1].axis('off')
             plt.savefig(sample_loc, bbox_inches='tight', pad_inches=0)
             plt.close()
-            
+            '''
+    
     # Initialize STEERER when training
     def on_train_start(self) :
         
@@ -447,6 +513,7 @@ class ControlLDM(LatentDiffusion):
             print(f'loaded {self.counter_dict} on STEERER on device={counter_device}')
             self.counter = CounterWrapper(path = self.counter_dict).to(counter_device)
             freeze_model(self.counter)
+        self.on_validation_epoch_end()
         
     def on_validation_start(self) :
         self.on_train_start()
@@ -454,7 +521,7 @@ class ControlLDM(LatentDiffusion):
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, dropout = True, *args, **kwargs):
         #Modified to original get_input() to handle different control inputs
-
+        
         # 20% Dropout rate for promptless conditioning 
         if dropout :
             for i in range(len(batch['txt'])):
@@ -575,6 +642,7 @@ class ControlLDM(LatentDiffusion):
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(self.control_model.parameters())
+        
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
             params += list(self.model.diffusion_model.out.parameters())
@@ -606,6 +674,51 @@ class ControlLDM(LatentDiffusion):
             return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)'''
         return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
     
+    def clip_grad(self, val : float) :
+        for layer1, layer2 in zip(self.model.diffusion_model.output_blocks.parameters(),self.model.diffusion_model.out.parameters()) :
+            if torch.norm(layer1.grad, p = 2.0) > val :
+                layer1.grad = torch.zeros_like(layer1.grad)
+            if torch.norm(layer2.grad, p = 2.0) > val :
+                layer2.grad = torch.zeros_like(layer2.grad)
+        nn.utils.clip_grad_norm_(self.control_model.parameters(), max_norm=val, norm_type=2.0)
+
+    #  TODO: change here to on_before_optimizer_step() to clip the average over 32 bataches instead
+    def on_after_backward(self):
+
+        self.clip_grad(val = self.clip_val)
+
+        min_grad = float('inf')
+        max_grad = 0.
+        average_list_0_25, average_list_25_50, average_list_50_75, average_list_75_100 = [], [], [], []
+        N = len(list(self.control_model.parameters()))
+        range_ = N // 4
+        for k, p in enumerate(self.control_model.parameters()) :
+            
+            p_grad_norm = torch.norm(p.grad)
+
+            if k <= range_ :
+                average_list_0_25.append(p_grad_norm.item())
+            elif k> range_ and k <= range_*2 :
+                average_list_25_50.append(p_grad_norm.item())
+            elif k > range_*2 and k <= range_*3 :
+                average_list_50_75.append(p_grad_norm.item())
+            elif k > range_*3 :
+                average_list_75_100.append(p_grad_norm.item())
+
+            if p_grad_norm > max_grad :
+                max_grad = p_grad_norm
+            if p_grad_norm < min_grad :
+                min_grad = p_grad_norm
+
+        av0_25 = sum(average_list_0_25)  / len(average_list_0_25)
+        av25_50 = sum(average_list_25_50)  / len(average_list_25_50)
+        av50_75 = sum(average_list_50_75)  / len(average_list_50_75)
+        av75_100 = sum(average_list_75_100)  / len(average_list_75_100)
+
+        #save in a txt file as such : self.global_step, min_grad, max_grad
+        with open('gradients.txt', 'a') as f: 
+            f.write(f"{self.global_step}, {min_grad:.6f}, {max_grad:.6f}, {av0_25:.6f}, {av25_50:.6f}, {av50_75:.6f}, {av75_100:.6f}\n")
+
     def compute_loss(self, x_start, cond, t, noise=None, mode='train', *args, **kwargs) :
 
         def time_scale(t,T=400, alpha=.1) :
@@ -615,10 +728,11 @@ class ControlLDM(LatentDiffusion):
             if t >= T :
                 return 1.
             return alpha*(T-t)/T + 1.
-
+        
         #cloning to grad() as in setting y -> f(x) + g(x). Otherwise dict() is mutable (and tensor too ?), 
         # consequently we might end up in setting y -> f(x) + g(x') where x' is modified.
         x_0 = x_start.clone()
+
 
         if noise is None :
             noise = default(noise, lambda: torch.randn_like(x_start))
@@ -640,23 +754,13 @@ class ControlLDM(LatentDiffusion):
             contr_cond = cond.pop(self.m_key)
             control_means = [contr_cond[i] for i in indices]
         control_gaussians = cond.pop(self.g_key).to(self.device)[indices]
-
+        
         # reconstruct images
         l_reconstructed = self.predict_reconstructed_from_noise(x_t=x_t400, t=t400, noise = eps_t400)
         raw_reconstructed = self.decode_first_stage_train(l_reconstructed)        
-        final_reconstructed = enhance_tensor(raw_reconstructed)        
+        final_reconstructed = enhance_tensor(raw_reconstructed)
         densities = self.counter.get_count(final_reconstructed, mode = mode).to(self.device)
         
-        '''
-            I was not able to find out why very rarely densities contain NaN values which messes up everything else below
-        '''
-        shallow_copy_densities = densities.detach()
-        check_for_NaN = torch.sum(shallow_copy_densities, dim =(1,2,3))
-        if not all(check_for_NaN == check_for_NaN) :
-            print(f'NaN was found in densities ... {check_for_NaN=}. \n')
-            return Lc, loss_dict
-
-
         #compute loss
         if self.control_eval == 'mse' :    #GAUSSIAN GT
             control_loss = mse_loss(
@@ -668,7 +772,7 @@ class ControlLDM(LatentDiffusion):
             l_scale = self.scale_mse
             aux_scale = self.scale_tv * 0.1
         elif self.control_eval == 'w2-count' : #MEAN GT
-            control_loss = self.DivLoss.wasserstein2(
+            control_loss, centroids = self.DivLoss.wasserstein2(
                 b_dmap = densities, 
                 b_gt = control_means, 
                 include_spread_loss = False,
@@ -678,7 +782,7 @@ class ControlLDM(LatentDiffusion):
             l_scale = self.scale_w2
             aux_scale = self.scale_count * 0.1
         elif self.control_eval == 'w2-tv' : 
-            control_loss = self.DivLoss.wasserstein2(
+            control_loss, centroids = self.DivLoss.wasserstein2(
                 b_dmap = densities, 
                 b_gt = control_means, 
                 include_spread_loss = False,
@@ -703,9 +807,9 @@ class ControlLDM(LatentDiffusion):
         loss = time_scaled_loss.mean() + Lc
 
         log_prefix = 'train' if self.training else 'val'
-        loss_dict.update({f'{log_prefix}/L_DM': Lc.clone().detach().item()})
-        loss_dict.update({f'{log_prefix}/L_contr:': control_loss.clone().detach().mean().item() *l_scale})
-        loss_dict.update({f'{log_prefix}/L_aux:': aux.clone().detach().mean().item() *aux_scale})
+        #loss_dict.update({f'{log_prefix}/L_DM': Lc.clone().detach().item()})
+        #loss_dict.update({f'{log_prefix}/L_contr:': control_loss.clone().detach().mean().item() *l_scale})
+        #loss_dict.update({f'{log_prefix}/L_aux:': aux.clone().detach().mean().item() *aux_scale})
         loss_dict.update({f'{log_prefix}/L_{self.control_eval}:': time_scaled_loss.clone().detach().mean().item()})
                 
         x_0_ = x_start400[0].clone().detach().permute(1,2,0)
@@ -717,6 +821,11 @@ class ControlLDM(LatentDiffusion):
         x_map = densities[0].clone().detach()
         x_denoised = final_reconstructed[0].clone().detach().permute(1,2,0)
 
+        if self.control_eval == 'w2-tv' or self.control_eval == 'w2-tv' :
+            w2_means = to_dmap(centroids[0].clone().detach())
+        else : 
+            w2_means = None
+        
         b_plot = dict(
             x0 = x_0_,
             xt = x_t_,
@@ -725,7 +834,8 @@ class ControlLDM(LatentDiffusion):
             t = t_,
             y = true_map,
             y_hat = x_map,
-            x_hat = x_denoised
+            x_hat = x_denoised,
+            w2_means = w2_means
         )
         self.plot_per_steps(b_results=b_plot)
         
@@ -740,47 +850,58 @@ class ControlLDM(LatentDiffusion):
         if self.global_step % per_global_step == 0 and self.trainer.training :
             if not os.path.exists('./saves') :
                 os.mkdir('./saves')
-            x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised = b_results.values()
+            if self.control_eval == 'w2-tv' or self.control_eval == 'w2-tv' :
+                x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised, w2_means = b_results.values()
+            else :
+                x_0, x_t, noise, eps_t, t, true_map, x_map, x_denoised, _ = b_results.values()
+
             true_count = int(true_map.sum().item())
             approx_count = int(x_map.sum().item())
             
             x_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(x_map)  
-           
+            
             true_map = Resize(size=(512,512), interpolation = InterpolationMode.NEAREST_EXACT)(true_map).permute(1,2,0)
             
             name = f'./saves/grid-rk={self.global_rank}-ep={self.current_epoch}-step={self.global_step}.png'
             fig, axis = plt.subplots(2,4, figsize=(12,6))
 
             try : 
-                axis[0,0].imshow(x_0.cpu())
+                axis[0,0].imshow(enhance_tensor(x_0).cpu())
                 axis[0,0].axis('off')
-                axis[0,0].set_title(f'x_0')
+                axis[0,0].set_title(r'$x_0$')
 
                 axis[0,1].imshow(x_denoised.cpu())
                 axis[0,1].axis('off')
-                axis[0,1].set_title(f'x_denoised')
+                axis[0,1].set_title(r'$\hat{x}$'+f'({t})')
 
                 axis[0,2].imshow(true_map.cpu())
                 axis[0,2].axis('off')
-                axis[0,2].set_title(f'true_map')
+                axis[0,2].set_title(r'$y$'+f'({t})')
 
                 axis[0,3].imshow(x_map.permute(1,2,0).cpu())
                 axis[0,3].axis('off')
-                axis[0,3].set_title(f'x_map')
+                axis[0,3].set_title(r'$\hat{y}$(x'+f'({t}))')
 
-                axis[1,0].imshow(x_t.cpu())
+                axis[1,0].imshow(enhance_tensor(x_t).cpu())
                 axis[1,0].axis('off')
-                axis[1,0].set_title(f'x_{t}')
+                axis[1,0].set_title(r'$x$'+f'({t})')
 
-                axis[1,1].imshow(eps_t.cpu())
+                axis[1,1].imshow(enhance_tensor(eps_t).cpu())
                 axis[1,1].axis('off')
-                axis[1,1].set_title(f'eps_{t}')
+                axis[1,1].set_title(r'$\varepsilon_\theta$('+f'{t}'+r')$\approx z$')
 
-                axis[1,2].imshow(noise.cpu())
+                axis[1,2].imshow(enhance_tensor(noise).cpu())
                 axis[1,2].axis('off')
-                axis[1,2].set_title(f'z')
+                axis[1,2].set_title(r'$z$')
+                
+                if self.control_eval == 'w2-tv' or self.control_eval == 'w2-tv' :
+                    axis[1,3].imshow(w2_means.cpu())
+                    axis[1,3].set_title(r'centroids')
+                    axis[1,3].axis('off')
+                else:
+                    axis[1,3].axis('off')
 
-                fig.suptitle(f'true_count = {true_count}, approx_count={approx_count}', fontsize=14)
+                fig.suptitle(r'$||y$'+f'({t})'+r'$||_1$'+f' = {true_count}, '+r'$||\hat{y}$(x'+f'({t}))'+r'$||_1$'+f'={approx_count}', fontsize=14)
                 plt.savefig(name, bbox_inches='tight')
 
             except Exception as e :
@@ -887,19 +1008,19 @@ class ControlLDM(LatentDiffusion):
                     b_gt = mean, 
                     include_spread_loss = False,
                     space_scaler = None
-                ) * self.scale_w2
+                )[0] * self.scale_w2
             elif self.control_eval == 'w2-tv':
                 norm = self.DivLoss.wasserstein2(
                     b_dmap = ymap, 
                     b_gt = mean, 
                     include_spread_loss = False,
                     space_scaler = None
-                ) * self.scale_w2
+                )[0] * self.scale_w2
             elif self.control_eval == 'count-tv':
                 norm = self.DivLoss.TV_norm(
                     dmap = ymap,
                     gt_dmap = gaussian
-                ) * self.scale_tv
+                )[0] * self.scale_tv
             
             norm.backward(torch.ones_like(norm)) #torch ones in there in case norm is not a scalar (multi sampling)
             score = -xt.grad 
@@ -941,10 +1062,6 @@ class ControlLDM(LatentDiffusion):
                         writer.writerow([eps_min, eps_max,  teps_min, teps_max, x_min, x_max, score_min, score_max, alpha_])
         image = self.decode_first_stage(x_t)
         return image
-
-
-
-
 
 def gradient_skip(function) :
     '''

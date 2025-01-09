@@ -2,8 +2,17 @@ imgs_dump/*
 ControlNet.code-workspace
 xcontrol_backup.yaml
 saves/*
-ControlNetHome/models/control_sd15_ini.ckpt
+ControlNetHome/models/control_sd15_ini_v0.ckpt
+ControlNetHome/models/control_sd15_ini_v2.ckpt
 ControlNetHome/models/v1-5-pruned.ckpt 
+ControlNetHome/models/trained_cldm.yaml 
+NaN_2_training_log.txt
+NaN_error_train_log.txt
+
+gradients.txt
+ddim_guidance-ddpm_samples/*
+debbug_flip_imgs/*
+
 
 __pycache__/
 ControlNetHome/__pycache__/
@@ -12,6 +21,20 @@ STEERER/__pycache__/
 STEERER/JHU_mae_54.5_mse_240.6.pth 
 
 old_conda_configs/*
+
+samples-ddim_100-steps-10/
+samples-ddim_100-steps-100/
+samples-ddim_250-steps-100/
+STEERER/nwpu_pre_trained.pth
+STEERER/slurm_test.sh
+STEERER/slurm_train.sh
+STEERER/test.sh
+STEERER/train.sh
+
+ControlNetHome/cldm/cldm_save.py
+training_dict
+epoch=0-step=50-v2.ckpt
+epoch=7-step=1200.ckpt
 
 CGsamples/
 lightning_logs/
@@ -31,6 +54,13 @@ train_old.py
 train_log.txt 
 tuning_config.txt
 ControlNetHome/cldm/cldm_save.py
+alarm.py 
+temp_sampling_process.csv
+test_old.py 
+training_log_05_01_25.txt
+training_log_crash_with_clipping.txt
+training_log_eps_pred_explodes.txt
+training_log_lastbefore_clipping.txt
 
 ControlNetHome/dataset_text_.txt
 img_n_maps.png
@@ -39,6 +69,9 @@ steerer_performance.png
 steerer_trained_performance-50.png
 steerer_trained_performance.png
 test_counter/
+
+
+
 
 # gitignore from STEERER
 # created by virtualenv automatically
@@ -62,7 +95,7 @@ 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
 .idea/
 
 ControlNetHome/training/
-ControlNetHome/lightning_logs/
+ControlNetHome/lightning_logs/*
 ControlNetHome/image_log/
 
 *.pth

@@ -33,10 +33,11 @@ The combinations of $L_{count}$ and $L_{aux}$ we propose are
     2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
     3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
     4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
+
 We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK].
 Further implementation details can be found at [INCLUDE LINK].
 
-The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. 
+The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
 
 
 ## Installation and setting up the ControlNet: 

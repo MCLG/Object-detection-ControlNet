@@ -459,7 +459,7 @@ class DDPM(pl.LightningModule):
         return loss, loss_dict
 
     def training_step(self, batch, batch_idx):
-
+        
         for k in self.ucg_training:
             p = self.ucg_training[k]["p"]
             val = self.ucg_training[k]["val"]
@@ -876,7 +876,7 @@ class LatentDiffusion(DDPM):
 
     def forward(self, x, c, *args, **kwargs):
         t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
-
+        
         if self.model.conditioning_key is not None:     # is 'crossattn' in cldm_v15
             assert c is not None
             if self.cond_stage_trainable:   # FALSE by default
