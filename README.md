@@ -6,8 +6,8 @@ each annotation is a probability density function. This gives us the possibility
 
 ![Bad display of 'graphics/pipeline.png'](graphics/pipeline.png)
 
-Each loss has the form $L_c + \lambda L_{count} + \lambda_{aux}L_{aux}$, where $L_$ is the standard diffusion model loss, L_{count} and L_{aux} are the control loss.
-During training, noise is added to each training image and the model learns to undo this procedure. This is evaluated by $L_count$. 
+Each loss has the form $L_c + \lambda L_{count} + \lambda_{aux}L_{aux}$, where $L_{c}$ is the standard diffusion model loss, $L_{count}$ and $L_{aux}$ are the control loss.
+During training, noise is added to each training image and the model learns to undo this procedure. This is evaluated by $L_{count}$. 
 In order to learn to generate accurate crowds wrt. the control input $Y$, the control loss is used. Given the predicted noise, we (approximately) reconstruct the initial image 
 and pass it through a counting model which produces a new Gaussian density map $\hat{Y}$. The control loss compares $Y$ and $\hat{Y}$, ranging from pixel-wise to positional comparison of heads between $Y$ and $\hat{Y}$.
 We implemented the following choices for $\L_{count}$ and $L_{aux}$.
