@@ -1,12 +1,36 @@
 ### Crowd-augmentation Control Net
 
-This code is a modification of the control net proposed by [[2]](#2) to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. A prompt can be passed as additional input such as "a group of people walking down the street.". 
+This code is a modification of the control net proposed by [[2]](#2) to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
+A prompt can be passed as additional input such as "a group of people walking down the street.". The motivation comes from the fact that
+each annotation is a probability density function. This gives us the possibility to evaluate the model's performance using the Gaussian cloud's distributional properties, rather than low-level pixel informations.
 
 ![Bad display of 'graphics/pipeline.png'](graphics/pipeline.png)
 
+Each loss has the form $L_c + \lambda L_{count} + \lambda_{aux}L_{aux}$, where $L_$ is the standard diffusion model loss, L_{count} and L_{aux} are the control loss.
+During training, noise is added to each training image and the model learns to undo this procedure. This is evaluated by $L_count$. 
+In order to learn to generate accurate crowds wrt. the control input $Y$, the control loss is used. Given the predicted noise, we (approximately) reconstruct the initial image 
+and pass it through a counting model which produces a new Gaussian density map $\hat{Y}$. The control loss compares $Y$ and $\hat{Y}$, ranging from pixel-wise to positional comparison of heads between $Y$ and $\hat{Y}$.
+We implemented the following for $\L_{count}$ and $L_{aux}$.
+* The MSE loss as in [[2]], 
+    $$
+        L_{MSE}\left(Y,\hat{Y}\right) = ||Y-\hat{Y}||_2^2
+    $$
+    * The Total Variation loss,
+    $$
+        L_{TV}\left(Y,\hat{Y} \right) = ||Y-\hat{Y}||_1
+    $$
+    * The counting loss,
+    $$
+        L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1,\| 
+    $$
+    * An average Wasserstein 2 loss between Gaussian clouds from each density map,
+    $$
+        L_{\mathcal{W}_2} =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
+    $$
+    where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), and $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$
+
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
-
 1) create a conda venv `conda create -n xcontrol python=3.9`. I used conda 24.4.0. Then activate the env. This followed the steps from https://github.com/lllyasviel/ControlNet/issues/612. 
 
     First install this package 
