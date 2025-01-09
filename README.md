@@ -10,7 +10,7 @@ Each loss has the form $L_c + \lambda L_{count} + \lambda_{aux}L_{aux}$, where $
 During training, noise is added to each training image and the model learns to undo this procedure. This is evaluated by $L_count$. 
 In order to learn to generate accurate crowds wrt. the control input $Y$, the control loss is used. Given the predicted noise, we (approximately) reconstruct the initial image 
 and pass it through a counting model which produces a new Gaussian density map $\hat{Y}$. The control loss compares $Y$ and $\hat{Y}$, ranging from pixel-wise to positional comparison of heads between $Y$ and $\hat{Y}$.
-We implemented the following for $\L_{count}$ and $L_{aux}$.
+We implemented the following choices for $\L_{count}$ and $L_{aux}$.
 * The MSE loss as in [[2]], 
     $$
         L_{MSE}\left(Y,\hat{Y}\right) = ||Y-\hat{Y}||_2^2
@@ -27,7 +27,17 @@ We implemented the following for $\L_{count}$ and $L_{aux}$.
     $$
         L_{\mathcal{W}_2} =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
     $$
-where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), and $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$
+where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$ and $s$ is a scaler to increase or decrease the importance of $\mathcal{P}$.
+The combinations of $L_{count}$ and $L_{aux}$ we propose are   
+1. $L_{count}=L_{MSE}$ and $L_{aux}= L_{TV}$
+2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
+3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
+4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
+We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK].
+Further implementation details can be found at [INCLUDE LINK].
+
+The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. 
+
 
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
