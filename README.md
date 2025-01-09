@@ -21,7 +21,7 @@ We implemented the following choices for $\L_{count}$ and $L_{aux}$.
     $$
 * The counting loss,
     $$
-        L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1,\| 
+        L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1\,| 
     $$
 * An average Wasserstein 2 loss between Gaussian clouds from each density map,
     $$
@@ -29,10 +29,10 @@ We implemented the following choices for $\L_{count}$ and $L_{aux}$.
     $$
 where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$ and $s$ is a scaler to increase or decrease the importance of $\mathcal{P}$.
 The combinations of $L_{count}$ and $L_{aux}$ we propose are   
-1. $L_{count}=L_{MSE}$ and $L_{aux}= L_{TV}$
-2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
-3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
-4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
+    1. $L_{count}=L_{MSE}$ and $L_{aux}= L_{TV}$
+    2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
+    3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
+    4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
 We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK].
 Further implementation details can be found at [INCLUDE LINK].
 
