@@ -1,3 +1,9 @@
+### Crowd-augmentation Control Net
+
+This code is a modification of the control net proposed by [[2]](#2) to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. A prompt can be passed as additional input such as "a group of people walking down the street.". 
+
+![Bad display of 'graphics/pipeline.png'](graphics/pipeline.png)
+
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
 
@@ -142,10 +148,46 @@ where ```RAW_DATA_LOC``` is the location of the dataset, ```DATA_LOC``` is where
 ```
 
 ## Usage :
-After installing all dependencies, activate the conda environment `conda activate xcontrol`. Then run from the ControlNetHome dir :
+After installing all dependencies, activate the conda environment `conda activate xcontrol`. 
+We included a example script, that loads the control net and generates an image given a density map. To run this, first open the file and change the settings 
+```python
+resume_path = './weights.ckpt'    # weights_path
+gpu = torch.device(0)                       # device
+path_to_img = './image_path.png'
+path_to_map = './map_path.png'
+prompt = ['a group of people sitting on chairs in a room']  #text prompt or [''] for promptless sampling
+ 
+control_eval = 'MSE'    # specify the control loss for 'count_guidance_ddpm' ("MSE"/ "W2-count" / "w2-TV" / "count TV")
+path_to_means = './centroids_path.png'      # required for count_guidance_ddpm
+steps = 100     #number of ddim and ddim_guided steps
+
 ```
+Then run :
+```bash
+python test.py method nb
+```
+where method is the sampling method: 'ddim', 'count_guidance_ddpm', 'ddim_guidance'. 'count_guidance_ddpm' and 'ddim_guided' require a GPU with at least 20GB (due to gradient computation) while 'ddim' only requires 10GB. 'nb' is the number of samples to generate.
+
+We trained on a Nvidia L40 with 50Gb with a batch-size of 2. The GPU capacity was almost full (~46Gb). We recommend using a batch-size of 1 and increase 'accumulate_grad_batches'. To train run:
+```bash
 python train.py
 ```
+There are a lot of parameters that you can tweak before training. Open the file and manually set them :
+```python 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3' # available GPUs
+AVAILABLE_GPU = [2]                            # Choose one GPU
+resume_path = 'epoch=0-step=50-v2.ckpt'#       # weight_dict or './ControlNetHome/models/control_sd15_ini_v2.ckpt' for untrained dict
+batch_size = 2                                 # Achieved maximum of 2
+num_workers = 15                               # DataLoader workers
+
+#training strategy :
+accumulate_grad_batches = 32                   # should be set higher for smaller batch-size
+max_val_per_epoch = 64
+check_val_every_n_epoch = 4
+accumulation_steps = 10000                     # Standard steps for all our models. We think at least double this amount is necessary.
+```
+
+Before running, you can enter which control loss you wish to train with. For this open the file ./ControlNetHome/models/cldm_v15_2.yaml and under "control_eval", you can set one of these: "w2-tv" #"mse"/ "w2-count" / "w2-tv" / "count-tv"
 
 You can check the performance of the divergence losses on your dataset by running the following test :
 Go to `/project_root_dir/ControlNetHome/` and run 
@@ -180,3 +222,12 @@ Junyu-Xuelong, (2020).
 NWPU-Crowd: A Large-Scale Benchmark for Crowd Counting and Localization.
 IEEE Transactions on Pattern Analysis and Machine Intelligence
 
+<a id="2">[2]</a> 
+Wang, Zhen, et al. (2024).
+Diffusion-based Data Augmentation for Object Counting Problems. 
+arXiv preprint arXiv:2401.13992 
+
+<a id="3">[3]</a> 
+Lvmin Zhang and Anyi Rao and Maneesh Agrawala (2023).
+Adding Conditional Control to Text-to-Image Diffusion Models.
+IEEE International Conference on Computer Vision (ICCV)
