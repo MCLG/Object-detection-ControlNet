@@ -49,7 +49,7 @@ debbug_log.txt
 epsplots/
 inference.py 
 scrap.py 
-test.py 
+
 train_old.py
 train_log.txt 
 tuning_config.txt
@@ -61,6 +61,7 @@ training_log_05_01_25.txt
 training_log_crash_with_clipping.txt
 training_log_eps_pred_explodes.txt
 training_log_lastbefore_clipping.txt
+training_log.txt 
 
 ControlNetHome/dataset_text_.txt
 img_n_maps.png
