@@ -15,19 +15,19 @@ We implemented the following for $\L_{count}$ and $L_{aux}$.
     $$
         L_{MSE}\left(Y,\hat{Y}\right) = ||Y-\hat{Y}||_2^2
     $$
-    * The Total Variation loss,
+* The Total Variation loss,
     $$
         L_{TV}\left(Y,\hat{Y} \right) = ||Y-\hat{Y}||_1
     $$
-    * The counting loss,
+* The counting loss,
     $$
         L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1,\| 
     $$
-    * An average Wasserstein 2 loss between Gaussian clouds from each density map,
+* An average Wasserstein 2 loss between Gaussian clouds from each density map,
     $$
         L_{\mathcal{W}_2} =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
     $$
-    where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), and $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$
+where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), and $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$
 
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
