@@ -13,7 +13,8 @@ gradients.txt
 ddim_guidance-ddpm_samples/*
 debbug_flip_imgs/*
 
-
+samples-ddim_guided_250-steps-100
+samples-ddim_guided_250-steps-100_0
 __pycache__/
 ControlNetHome/__pycache__/
 STEERER/__pycache__/
@@ -62,7 +63,7 @@ training_log_crash_with_clipping.txt
 training_log_eps_pred_explodes.txt
 training_log_lastbefore_clipping.txt
 training_log.txt 
-
+ControlNetHome/control_copy_prior_cython.yaml
 ControlNetHome/dataset_text_.txt
 img_n_maps.png
 steerer_perf_w2.png
