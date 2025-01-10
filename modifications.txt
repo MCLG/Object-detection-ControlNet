@@ -1,0 +1,34 @@
+ControlNetHome/cldm/cldm.py 
+    class ControLDM 
+        get_input: handles the batch. Now handles the centroids and Gaussian density maps for control input
+        on_after_backward: clipping gradients
+        decode_first_stage_train: standard decode_first_stage but with gradient checkpointing
+        compute_loss: called in p_losses and fetches the DM loss, then computes the control loss
+        count_guidance_sampling: a ddpm method with classifier guidance. Depends on the loss type selected (attribute control_eval)
+ControlNetHome/ldm/models/diffusion/ddim.py
+    class DDIMSampler
+        p_sample_ddim: added option to classifier guided ddim or standard ddim
+ControlNetHome/tools
+    divergence_loss.py: contains class DivergenceLoss which computes W2 and TV.
+    Uses the package: gmm_torch (https://github.com/ldeecke/gmm-torch)
+    Modified gmm_torch such that gradient tracking is enabled 
+
+STEERER/steerer_inference.py
+    class CounterWrapper
+        get_count: takes an RGB image and outputs a Gaussian density map 
+STEERER/lib/models/build_counter.py
+    changed module calls to enable gradient checkpointing. 
+STEERER/filter_data.py
+    filters the data according to the accuracy of the STEERER-dictionary.
+STEERER/test_counter.py
+    evaluates the performance of STEERER wrt. MSE/MAE/w2. 
+    Computes a forward pass of STEERER given the gt images. The maps are then compared with the gt-maps
+
+test.py 
+train.py 
+viz_gradient_flow.py 
+exponential_smoothing.py 
+
+data_tools/
+    load_dataset.py: loads your dataset 
+    steerer_format_dataset.py: transforms the DM training data into STEERER training data 

@@ -25,9 +25,11 @@ def main() :
     parser.add_argument("nb_sample", help = 'number of samples to produce')
     args = parser.parse_args()
 
+    #ids : 041736, 025096(chinese fforbiden city), 038917 (people at carnaval), 030017 (busy street), 025949 (demonstration), 048446 (ceremony), 041927 (monks), 040099 (ceremony2) 
     ###########################################################################################################################
     # CHANGE HERE TO YOUR SETTING /lightning_logs/version_4/checkpoints/epoch=82-step=13188.ckpt   ./epoch=7-step=1200.ckpt
-    resume_path = '/home/luk02485/development/ControlNet_2/control_mse_tv/lightning_logs/version_4/checkpoints/epoch=82-step=13188.ckpt'    # weights_path
+
+    resume_path = './epoch=7-step=1200.ckpt'    # weights_path
     gpu = torch.device(0)                       # device
     path_to_img = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/img/029002.pt'   #image_path
     path_to_map = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/map/029002.pt'   #map_path
@@ -36,6 +38,7 @@ def main() :
     # specific to count_guidance_ddpm 
     control_eval = 'MSE'    # for count guidance sampling specify the control loss ("MSE"/ "W2-count" / "w2-TV" / "count TV")
     path_to_means = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/mean/029002.pt' # centroids_path
+
     ############################################################################################################################
 
     #loading the model
@@ -43,8 +46,10 @@ def main() :
     interm = load_state_dict_og(resume_path)
     model.load_state_dict(interm,strict = False)
     model = model.to(gpu)
+    
     model.counter = CounterWrapper(path = model.counter_dict).to(gpu)
     freeze_model(model.counter)
+    model.control_eval = control_eval
 
     #ddim parameters
     guess_mode = True
@@ -55,11 +60,12 @@ def main() :
     #loading images
     dmap = torch.load(path_to_map).to(model.device)
     img = torch.load(path_to_img).to(model.device).unsqueeze(0)
+    print(f'{model.device=}, {dmap.device=},, {model.first_stage_key=}')
     batch = {
-        'jpg' : torch.randn(1,512,512,3),
+        'jpg' : torch.randn(1,512,512,3).to(gpu),
         'hint' : dmap.permute(1,2,0).unsqueeze(0),
         'txt' : prompt,
-        'mean' : [torch.randn(1,2)*512]
+        'mean' : [512*torch.randn(1,2).to(gpu)]
     }
     
     nb_samples = int(args.nb_sample)
@@ -67,11 +73,11 @@ def main() :
     if args.sampling_method == 'ddim' :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = steps)
         for k in range(nb_samples) : 
-            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = False, folder_name=folder_name)
+            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = False, folder_name=folder_name, steps=steps)
     elif args.sampling_method == 'ddim_guided' :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = steps)
         for k in range(nb_samples) : 
-            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = True, folder_name=folder_name)
+            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = True, folder_name=folder_name, steps=steps)
     elif args.sampling_method == 'count_guidance_ddpm' :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = None)
         means = torch.load(path_to_means, map_location = gpu)            

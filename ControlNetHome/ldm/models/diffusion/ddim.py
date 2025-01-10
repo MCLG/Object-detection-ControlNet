@@ -267,28 +267,6 @@ class DDIMSampler(object):
             alpha = 0.1 * (T - t.item())/T
             eps = e_t + alpha * sqrt_one_minus_alphas[index] * score
 
-
-
-
-
-        #activate grad for x_t
-        #predict x_0 with e_t
-        # decode x_0
-        #pass in counter
-        #compute dmap
-        # mse gt_map and dmap
-        #grad wrt to x_t
-        # eps = eps - sqrt 1- alphacumprod * grad
-
-
-
-
-
-
-
-
-
-
         # current prediction for x_0
         if self.model.parameterization != "v":
             pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()

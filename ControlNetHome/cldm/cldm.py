@@ -663,15 +663,6 @@ class ControlLDM(LatentDiffusion):
 
     def decode_first_stage_train(self, z, predict_cids=False, force_not_quantize=False):
         z = 1. / self.scale_factor * z
-        '''try :
-            if self.trainer.validating :
-                return self.first_stage_model.decode(z)
-            elif self.trainer.training :
-                return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
-            else :
-                return self.first_stage_model.decode(z)
-        except RuntimeError :
-            return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)'''
         return torch.utils.checkpoint.checkpoint(self.first_stage_model.decode, z, use_reentrant=True)
     
     def clip_grad(self, val : float) :
@@ -728,9 +719,7 @@ class ControlLDM(LatentDiffusion):
             if t >= T :
                 return 1.
             return alpha*(T-t)/T + 1.
-        
-        #cloning to grad() as in setting y -> f(x) + g(x). Otherwise dict() is mutable (and tensor too ?), 
-        # consequently we might end up in setting y -> f(x) + g(x') where x' is modified.
+
         x_0 = x_start.clone()
 
 
@@ -757,7 +746,7 @@ class ControlLDM(LatentDiffusion):
         
         # reconstruct images
         l_reconstructed = self.predict_reconstructed_from_noise(x_t=x_t400, t=t400, noise = eps_t400)
-        raw_reconstructed = self.decode_first_stage_train(l_reconstructed)        
+        raw_reconstructed = self.decode_first_stage_train(l_reconstructed)   #decoder     
         final_reconstructed = enhance_tensor(raw_reconstructed)
         densities = self.counter.get_count(final_reconstructed, mode = mode).to(self.device)
         
@@ -807,9 +796,6 @@ class ControlLDM(LatentDiffusion):
         loss = time_scaled_loss.mean() + Lc
 
         log_prefix = 'train' if self.training else 'val'
-        #loss_dict.update({f'{log_prefix}/L_DM': Lc.clone().detach().item()})
-        #loss_dict.update({f'{log_prefix}/L_contr:': control_loss.clone().detach().mean().item() *l_scale})
-        #loss_dict.update({f'{log_prefix}/L_aux:': aux.clone().detach().mean().item() *aux_scale})
         loss_dict.update({f'{log_prefix}/L_{self.control_eval}:': time_scaled_loss.clone().detach().mean().item()})
                 
         x_0_ = x_start400[0].clone().detach().permute(1,2,0)

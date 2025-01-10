@@ -39,6 +39,12 @@ Further implementation details can be found at [INCLUDE LINK].
 
 The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
 
+# Overview:
+    * Installation of the control net [here](installation-and-setting-up-the-controlNet)
+    * Warnings and errors that occured to me when re-doing the installation [here](additional-warnings-errors-that-might-occur)
+    * Loading the training and test data [here](loading-data)
+    * Usage includes training, testing and other files  [here](usage)
+
 
 ## Installation and setting up the ControlNet: 
 Clone the Git rep `git clone --depth 1` and follow the following instructions :
@@ -184,7 +190,7 @@ where ```RAW_DATA_LOC``` is the location of the dataset, ```DATA_LOC``` is where
 
 ## Usage :
 After installing all dependencies, activate the conda environment `conda activate xcontrol`. 
-We included a example script, that loads the control net and generates an image given a density map. To run this, first open the file and change the settings 
+We included a example script, that loads the control net and generates an image given a density map. To run this, first open the file "test.py" and change the settings 
 ```python
 resume_path = './weights.ckpt'    # weights_path
 gpu = torch.device(0)                       # device
@@ -203,7 +209,7 @@ python test.py method nb
 ```
 where method is the sampling method: 'ddim', 'count_guidance_ddpm', 'ddim_guidance'. 'count_guidance_ddpm' and 'ddim_guided' require a GPU with at least 20GB (due to gradient computation) while 'ddim' only requires 10GB. 'nb' is the number of samples to generate.
 
-We trained on a Nvidia L40 with 50Gb with a batch-size of 2. The GPU capacity was almost full (~46Gb). We recommend using a batch-size of 1 and increase 'accumulate_grad_batches'. To train run:
+We trained on a Nvidia L40 with 48GB with a batch-size of 2. The GPU was almost full capacity (~46GB). We recommend using a batch-size of 1 and increase 'accumulate_grad_batches'. To train run:
 ```bash
 python train.py
 ```
