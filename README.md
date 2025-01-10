@@ -40,10 +40,10 @@ Further implementation details can be found at [INCLUDE LINK].
 The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
 
 # Overview:
-* Installation of the control net [here](installation-and-setting-up-the-controlNet)
-* Warnings and errors that occured to me when re-doing the installation [here](additional-warnings-errors-that-might-occur)
-* Loading the training and test data [here](loading-data)
-* Usage includes training, testing and other files  [here](usage)
+* Installation of the control net <!---[here](installation-and-setting-up-the-controlNet)-->
+* Warnings and errors that occured to me when re-doing the installation <!---[here](additional-warnings-errors-that-might-occur)-->
+* Loading the training and test data <!---[here](loading-data)-->
+* Usage includes training, testing and other files  <!---[here](usage)-->
 
 
 ## Installation and setting up the ControlNet: 
