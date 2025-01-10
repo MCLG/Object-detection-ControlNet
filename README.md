@@ -1,4 +1,4 @@
-### Crowd-augmentation Control Net
+# Crowd-augmentation Control Net
 
 This code is a modification of the control net proposed by [[2]](#2) to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
 A prompt can be passed as additional input such as "a group of people walking down the street.". The motivation comes from the fact that
@@ -39,7 +39,7 @@ Further implementation details can be found at [INCLUDE LINK].
 
 The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
 
-# Overview:
+### Overview:
 * Installation of the control net <!---[here](installation-and-setting-up-the-controlNet)-->
 * Warnings and errors that occured to me when re-doing the installation <!---[here](additional-warnings-errors-that-might-occur)-->
 * Loading the training and test data <!---[here](loading-data)-->
@@ -90,7 +90,7 @@ pip3 install yacs
 
 7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file. Rename the file as "nwpu_pre_trained.pth"
 
-### Additional warnings/errors that might occur:
+## Additional warnings/errors that might occur:
  If upon  initializing the model
  
  (include graphic here), 
@@ -116,7 +116,7 @@ follow the steps :
     /home/user/.conda/envs/control_test/lib/python3.9/site-packages/mmengine/optim/optimizer/builder.py 
     See : https://github.com/open-mmlab/mmengine/commit/4c22f78cdea2981a2b48a167e9feffe4721f8901 
 
-## Changes done to the original ControlNet Code
+### Changes done to the original ControlNet Code
 
 (Old) The following changes have been done to create and load the model on GPU directly rather than CPU. This allows for single GPU training
 * Process kept getting killed because ran out of RAM. 
@@ -143,7 +143,7 @@ An issue with trying the multi-GPU training is to initialize all models on the C
 *  Restrict `CUDA_VISIBLE_DEVICES` to all unused GPU and exclude `Device:0` completely as the background processes are running constantly which results in at least one to be present when calling `torch.cuda.list_active_processes()`.
 * Comment out the xformers import and set `XFORMERS_IS_AVAILBLE = False` in the files _ControlNetHome/ldm/modules/attention.py_ and _ControlNetHome/ldm/modules/diffusionmodules/model.py_. This package is being used to import the object `memory_efficient_attention()` from xformer.ops but is not used in the Class ojects that are being imported from the above mentioned files. It is during the import of xformers.ops that `torch.cuda.is_initialized() = True`.
 
-## Overview of the model loading
+### Overview of the model loading
 ```bash
 
   | Name              | Type               | Params
