@@ -8,7 +8,7 @@ ControlNetHome/models/v1-5-pruned.ckpt
 ControlNetHome/models/trained_cldm.yaml 
 NaN_2_training_log.txt
 NaN_error_train_log.txt
-
+scrap_pic.png
 gradients.txt
 ddim_guidance-ddpm_samples/*
 debbug_flip_imgs/*
