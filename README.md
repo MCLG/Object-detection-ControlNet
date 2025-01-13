@@ -16,11 +16,10 @@ We implemented the following choices for $L_{count}$ and $L_{aux}$.
 * The Total Variation loss,
     $L_{TV}\left(Y,\hat{Y} \right) = ||Y-\hat{Y}||_1$
 * The counting loss,
-    $L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1\,| $
+  $$
+  L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1\,| $
 * An average Wasserstein 2 loss between Gaussian clouds from each density map,
-    ```math
-        L_{\mathcal{W}_2}\left(Y,\hat{Y}\right) =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
-    ```
+  $$L_{\mathcal{W}_2}\left(Y,\hat{Y}\right) =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)$$
   
 where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$ and $s$ is a scaler to increase or decrease the importance of $\mathcal{P}$.
 The combinations of $L_{count}$ and $L_{aux}$ we propose are   
