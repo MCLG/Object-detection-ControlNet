@@ -12,22 +12,21 @@ In order to learn to generate accurate crowds wrt. the control input $Y$, the co
 and pass it through a counting model which produces a new Gaussian density map $\hat{Y}$. The control loss compares $Y$ and $\hat{Y}$, ranging from pixel-wise to positional comparison of heads between $Y$ and $\hat{Y}$.
 We implemented the following choices for $L_{count}$ and $L_{aux}$.
 * The MSE loss as in [[2]], 
-  $$
-  L_{MSE}\left(Y,\hat{Y}\right) = ||Y-\hat{Y}||_2^2
-  $$
+    $$
+        L_{MSE}\left(Y,\hat{Y}\right) = ||Y-\hat{Y}||_2^2
+    $$
 * The Total Variation loss,
-  $$
-  L_{TV}\left(Y,\hat{Y} \right) = ||Y-\hat{Y}||_1
-  $$
+    $$
+        L_{TV}\left(Y,\hat{Y} \right) = ||Y-\hat{Y}||_1
+    $$
 * The counting loss,
-  $$
-  L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1\,|
-  $$
+    $$
+        L_{counting} = |\,||Y||_1 - ||\hat{Y}||_1\,| 
+    $$
 * An average Wasserstein 2 loss between Gaussian clouds from each density map,
-  $$
-  L_{\mathcal{W}_2}\left(Y,\hat{Y}\right) =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
-  $$
-  
+    $$
+        L_{\mathcal{W}_2}\left(Y,\hat{Y}\right) =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
+    $$
 where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$ and $s$ is a scaler to increase or decrease the importance of $\mathcal{P}$.
 The combinations of $L_{count}$ and $L_{aux}$ we propose are   
     1. $L_{count}=L_{MSE}$ and $L_{aux}= L_{TV}$
