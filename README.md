@@ -33,6 +33,7 @@ The combinations of $L_{count}$ and $L_{aux}$ we propose are
     2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
     3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
     4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
+    
 The desired loss can be set by opening ControlNetHome/models/cldm_v15_2.yaml and changing "control_eval".
 
 We trained 13k steps for 1 and 2. The models have not yet properly converged and further optimization must be done. The dictionnaries and implementation details are available at https://drive.google.com/drive/folders/1soE-okkFyob9tePvirdpL986w8AiBU_N?usp=drive_link. 
