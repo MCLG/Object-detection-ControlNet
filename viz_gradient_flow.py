@@ -29,9 +29,14 @@ def plot_grad(file_path,name) :
 
             insort(l_min,float(minimum))
             insort(l_max,float(maximum))
-
     f, ax = plt.subplots(1,2,figsize=(12,6))
     indices = [i for i in range(0,len(min_mean))]
+    if len(indices) > 262 :
+        indices = indices[:262]
+        min_mean = min_mean[:262]
+        max_mean = max_mean[:262]
+        min_median = min_median[:262]
+        max_median = max_median[:262]
 
     ax[0].plot(indices, min_mean, label='Min Mean', linestyle='-', color='blue')  # Line style and color
     ax[0].plot(indices, max_mean, label='Max Mean', linestyle='--', color='red')  # Line style and color

@@ -95,7 +95,12 @@ class CounterWrapper(Baseline_Counter):
             print(f'unknown {mode=} passed to get_count. Options are "val" or "train". ')
             sys.exit(0)
     
+def main() :
+    noise = torch.randn(3,1536,2048)
+    counter = CounterWrapper(device=torch.device(0))
 
-
-
-
+    dmap = counter.get_count(noise)
+    print(f'{dmap.sum().item()}')
+    
+if __name__ == '__main__' :
+    main()

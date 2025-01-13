@@ -21,23 +21,23 @@ import argparse
 def main() :
     
     parser = argparse.ArgumentParser(description=" ")
-    parser.add_argument("sampling_method", help=" 'ddim', 'count_guidance_ddpm' or 'ddim_guided' ")
+    parser.add_argument("sampling_method", help=" 'ddim', 'ddim_guided' or 'count_guidance_ddpm (for tracking and plotting purposes)'. ")
     parser.add_argument("nb_sample", help = 'number of samples to produce')
     args = parser.parse_args()
 
     #ids : 041736, 025096(chinese fforbiden city), 038917 (people at carnaval), 030017 (busy street), 025949 (demonstration), 048446 (ceremony), 041927 (monks), 040099 (ceremony2) 
     ###########################################################################################################################
-    # CHANGE HERE TO YOUR SETTING /lightning_logs/version_4/checkpoints/epoch=82-step=13188.ckpt   ./epoch=7-step=1200.ckpt
-
-    resume_path = './epoch=7-step=1200.ckpt'    # weights_path
+    # CHANGE HERE TO YOUR SETTING '/home/luk02485/development/ControlNet_2/control_mse_tv/lightning_logs/version_4/checkpoints/epoch=82-step=13188.ckpt'   ./epoch=7-step=1200.ckpt
+    #048533 busy restaurant
+    resume_path = './epoch=7-step=1200.ckpt'   # weights_path
     gpu = torch.device(0)                       # device
-    path_to_img = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/img/029002.pt'   #image_path
-    path_to_map = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/map/029002.pt'   #map_path
-    prompt = ['a group of people sitting on chairs in a room']  #text prompt or [''] for promptless sampling
+    path_to_img = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/img/048533.pt'   #image_path
+    path_to_map = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/map/048533.pt'   #map_path
+    prompt = ['A busy restaurant']  #text prompt or [''] for promptless sampling
 
     # specific to count_guidance_ddpm 
-    control_eval = 'MSE'    # for count guidance sampling specify the control loss ("MSE"/ "W2-count" / "w2-TV" / "count TV")
-    path_to_means = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/mean/029002.pt' # centroids_path
+    control_eval = 'mse'    # for count guidance sampling specify the control loss ("mse"/ "w2-count" / "w2-TV" / "count TV")
+    path_to_means = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/mean/048533.pt' # centroids_path
 
     ############################################################################################################################
 
@@ -74,10 +74,14 @@ def main() :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = steps)
         for k in range(nb_samples) : 
             ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = False, folder_name=folder_name, steps=steps)
+    
     elif args.sampling_method == 'ddim_guided' :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = steps)
+        means = [torch.load(path_to_means, map_location = gpu)] if control_eval not in ['mse', 'count-tv'] else None
+        model.DivLoss.device = model.device
         for k in range(nb_samples) : 
-            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = True, folder_name=folder_name, steps=steps)
+            ddim_sample(model=model, batch=batch, gpu=gpu, img=img, dmap=dmap.unsqueeze(0), guided = True, folder_name=folder_name, steps=steps, mean=means)
+    
     elif args.sampling_method == 'count_guidance_ddpm' :
         folder_name=create_folder(args.sampling_method, nb_samples, steps = None)
         means = torch.load(path_to_means, map_location = gpu)            
@@ -95,7 +99,8 @@ def ddim_sample(
     dmap,
     guided,
     folder_name,
-    steps=50
+    steps=50,
+    mean=None
 ) :
         
     #sending batch to latent space
@@ -127,7 +132,8 @@ def ddim_sample(
         eta = eta,
         temperature=temperature, 
         noise_dropout = noise_dropout, #prob between 0 and 1,
-        guided=guided
+        guided=guided,
+        mean=mean
         )
 
     #decode 
@@ -197,11 +203,11 @@ def count_guidance_ddpm(
     img = F.interpolate(img, size=(1200, 1200), mode='bicubic', align_corners=False)
     reconstructed_density_map = F.interpolate(reconstructed_density_map, size=(1200, 1200), mode='bicubic', align_corners=False)
 
-    graph_loc = './ddpm_guidance_graph_0.png'
+    graph_loc = os.path.join(folder_name,'ddpm_guidance_graph_0.png')
     counter = 0
     while os.path.exists(graph_loc):
         counter += 1
-        graph_loc = f'./ddpm_guidance_graph_{counter}.png'
+        graph_loc = os.path.join(folder_name,f'ddpm_guidance_graph_{counter}.png')
 
     CG_plot_sample(loc=graph_loc, temp_file=sampling_data_csv)
 

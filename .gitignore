@@ -37,6 +37,23 @@ training_dict
 epoch=0-step=50-v2.ckpt
 epoch=7-step=1200.ckpt
 
+samples-ddim_50-steps-1_0
+samples-ddim_guided_50-steps-100
+samples-ddim_guided_50-steps-100_0
+samples-ddim_guided_50-steps-100_1
+samples-ddim_guided_50-steps-100_2
+samples-ddim_guided_50-steps-100_3
+samples-ddim_guided_50-steps-100_4
+samples-ddim_guided_50-steps-100_5
+samples-ddim_guided_50-steps-100_6
+samples-ddim_guided_50-steps-100_7
+samples-ddim_guided_50-steps-100_8
+samples-ddim_guided_50-steps-100_9
+samples-ddim_guided_50-steps-100_10
+samples-ddim_guided_50-steps-100_11
+samples-ddim_guided_250-steps-100
+samples-ddim_guided_250-steps-100_0
+
 CGsamples/
 lightning_logs/
 nccl_err_logs/

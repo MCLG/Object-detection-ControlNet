@@ -1,8 +1,8 @@
 # Crowd-augmentation Control Net
 
-This code is a modification of the control net proposed by [[2]](#2) to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
-A prompt can be passed as additional input such as "a group of people walking down the street.". The motivation comes from the fact that
-each annotation is a probability density function. This gives us the possibility to evaluate the model's performance using the Gaussian cloud's distributional properties, rather than low-level pixel informations.
+This code is a modification of the control net proposed by [[2]] to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
+A prompt can be passed as additional input such as "a group of people walking down the street.". The motivation of our work comes from the fact that
+each annotation is represented as a probability density function (Gaussian). This gives us the possibility to evaluate the model's performance using the Gaussian clouds distributional properties, rather than low-level pixel information.
 
 ![Bad display of 'graphics/pipeline.png'](graphics/pipeline.png)
 
@@ -34,8 +34,8 @@ The combinations of $L_{count}$ and $L_{aux}$ we propose are
     3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
     4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
 
-We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK].
-Further implementation details can be found at [INCLUDE LINK].
+We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK]. The models have not yet properly converged and further optimization must be done.
+Implementation details can be found at [INCLUDE LINK].
 
 The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
 
@@ -57,7 +57,7 @@ Clone the Git rep `git clone --depth 1` and follow the following instructions :
 
 2) Follow the first steps of Step 3 from https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md :
 
-    a) download the file "v1-5-pruned.ckpt" from https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/main (DEAD LINK --> located in folder /net/vid-raxus/storage/deeplearning/users/luk02485/control_net_checkpoints ). This file **needs** to be located in  "./ControlNetHome/models/v1-5-pruned.ckpt". 
+    a) download the file "v1-5-pruned.ckpt" from https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/main or from https://drive.google.com/drive/folders/1soE-okkFyob9tePvirdpL986w8AiBU_N?usp=drive_link. This file **needs** to be located in  "./ControlNetHome/models/v1-5-pruned.ckpt". 
 
     b) Navigate inside "./ControlNetHome" and execute
     

@@ -81,6 +81,7 @@ class DDIMSampler(object):
                dynamic_threshold=None,
                ucg_schedule=None,
                guided=False,
+               mean=None,
                **kwargs
                ):
         if conditioning is not None:
@@ -123,7 +124,8 @@ class DDIMSampler(object):
                                                     dynamic_threshold=dynamic_threshold,
                                                     ucg_schedule=ucg_schedule,
                                                     guided=guided,
-                                                    gaussian = gaussian #change
+                                                    gaussian = gaussian, #change
+                                                    mean=mean
                                                     )
         return samples, intermediates
 
@@ -135,7 +137,8 @@ class DDIMSampler(object):
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
                       unconditional_guidance_scale=1., unconditional_conditioning=None, dynamic_threshold=None,
                       ucg_schedule=None,
-                      guided=False):
+                      guided=False,
+                      mean=None):
         device = self.model.betas.device
         b = shape[0]
         if x_T is None:
@@ -152,8 +155,10 @@ class DDIMSampler(object):
         intermediates = {'x_inter': [img], 'pred_x0': [img]}
         time_range = reversed(range(0,timesteps)) if ddim_use_original_steps else np.flip(timesteps)
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
-        print(f"Running DDIM Sampling with {total_steps} timesteps")
-
+        if not guided:
+            print(f"Running DDIM Sampling with {total_steps} timesteps")
+        else :
+            print(f"Running guidance-DDIM Sampling with {total_steps} timesteps, loss={self.model.control_eval}")
         iterator = tqdm(time_range, desc='DDIM Sampler', total=total_steps)
 
         for i, step in enumerate(iterator):
@@ -178,7 +183,8 @@ class DDIMSampler(object):
                                       dynamic_threshold=dynamic_threshold,
                                       time_range = time_range, # change
                                       gaussian=gaussian,
-                                      guided=guided)  # change
+                                      guided=guided,
+                                      mean=mean)  # change
             img, pred_x0 = outs
             if callback: callback(i)
             if img_callback: img_callback(pred_x0, i)
@@ -197,7 +203,8 @@ class DDIMSampler(object):
                     temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
                     unconditional_guidance_scale=1., unconditional_conditioning=None,
                     dynamic_threshold=None,
-                    guided = False                 
+                    guided = False,
+                    mean=None                
                     ): 
         b, *_, device = *x.shape, x.device
 
@@ -247,6 +254,7 @@ class DDIMSampler(object):
         sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
         sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index],device=device)
 
+        ############################### Contribution here #############################################
         if guided :    
             with torch.set_grad_enabled(True) :
                 xt = x.clone().detach().requires_grad_(True)
@@ -254,18 +262,52 @@ class DDIMSampler(object):
                 x0 = self.model.predict_start_from_z_and_v(xt, t, model_output)
                 x0_hat = self.model.decode_first_stage_train(x0)
                 x0_map = self.model.counter.get_count(x0_hat, mode = 'train')
-                gaussian = interpolate(gaussian, size = (1536,2048), mode='bicubic')
-                norm = mse_loss(
+
+                if self.model.control_eval not in ['mse', 'count-tv'] :
+                    assert mean is not None, f'Required to pass the ground truth centroids as "mean" for control_eval={self.model.control_eval}. '
+
+                if self.model.control_eval == 'mse' :
+                    gaussian = interpolate(gaussian, size = (1536,2048), mode='bicubic')
+                    norm = mse_loss(
+                        gaussian,
+                        x0_map, 
+                        reduction ='none'
+                    ).mean(dim=[1, 2, 3]) *  self.model.scale_mse
+                elif self.model.control_eval == 'w2-count' :
+                    norm = self.model.DivLoss.wasserstein2(
+                        b_dmap = x0_map, 
+                        b_gt = mean, 
+                        include_spread_loss = False,
+                        space_scaler = None
+                    )[0] *  self.model.scale_w2
+                elif self.model.control_eval == 'w2-tv':
+                    gaussian = interpolate(gaussian, size = (1536,2048), mode='bicubic')
+                    norm = self.model.DivLoss.wasserstein2(
+                        b_dmap = x0_map, 
+                        b_gt = mean, 
+                        include_spread_loss = False,
+                        space_scaler = None
+                    )[0] *  self.model.scale_w2
+                elif self.model.control_eval == 'count-tv':
+                    gaussian = interpolate(gaussian, size = (1536,2048), mode='bicubic')
+                    norm = self.model.DivLoss.TV_norm(
+                        dmap = x0_map,
+                        gt_dmap = gaussian
+                    )[0] *  self.model.scale_tv
+                else :
+                    raise ValueError(f'Invalid control_eval={self.model.control_eval} passed in ddim. ')
+                """norm = mse_loss(
                         gaussian,
                         x0_map, 
                         reduction ='none'
                     ).mean(dim=[1, 2, 3]) * self.model.scale_mse
-                
+                """
                 norm.backward(torch.ones_like(norm)) #torch ones in there in case norm is not a scalar (multi sampling)
                 score = -xt.grad
             T = time_range[0]
             alpha = 0.1 * (T - t.item())/T
             eps = e_t + alpha * sqrt_one_minus_alphas[index] * score
+        ##############################################################################################
 
         # current prediction for x_0
         if self.model.parameterization != "v":
