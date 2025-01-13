@@ -25,10 +25,8 @@ def main() :
     parser.add_argument("nb_sample", help = 'number of samples to produce')
     args = parser.parse_args()
 
-    #ids : 041736, 025096(chinese fforbiden city), 038917 (people at carnaval), 030017 (busy street), 025949 (demonstration), 048446 (ceremony), 041927 (monks), 040099 (ceremony2) 
     ###########################################################################################################################
-    # CHANGE HERE TO YOUR SETTING '/home/luk02485/development/ControlNet_2/control_mse_tv/lightning_logs/version_4/checkpoints/epoch=82-step=13188.ckpt'   ./epoch=7-step=1200.ckpt
-    #048533 busy restaurant
+    # CHANGE HERE TO YOUR SETTINGS 
     resume_path = './epoch=7-step=1200.ckpt'   # weights_path
     gpu = torch.device(0)                       # device
     path_to_img = '/net/vid-raxus/storage/deeplearning/users/luk02485/CC_filter_data/train/img/048533.pt'   #image_path
@@ -55,7 +53,7 @@ def main() :
     guess_mode = True
     strength = 1. #does not work outside of interval [0,1]
     model.control_scales = [strength * (0.825 ** float(12 - i)) for i in range(13)] if guess_mode else ([strength] * 13)
-    steps = 250
+    steps = 50
 
     #loading images
     dmap = torch.load(path_to_map).to(model.device)
