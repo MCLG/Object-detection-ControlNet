@@ -1,6 +1,6 @@
 # Crowd-augmentation Control Net
 
-This code is a modification of the control net proposed by [[2]] to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]](#3), we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
+This code is a modification of the control net proposed by [[2]] to generate artificial training images for object counting problems. Using the ControlNet architecture [[3]], we train a model that given a control input $Y\in[0,1]^{512\times512}$ which is a Gaussian density map, learns to generate an image $X(Y)\in[-1,1]^{512\times512}$ of crowds such that each Gaussian cloud in $Y$ corresponds to the position of a person's head. 
 A prompt can be passed as additional input such as "a group of people walking down the street.". The motivation of our work comes from the fact that
 each annotation is represented as a probability density function (Gaussian). This gives us the possibility to evaluate the model's performance using the Gaussian clouds distributional properties, rather than low-level pixel information.
 
@@ -25,7 +25,7 @@ We implemented the following choices for $L_{count}$ and $L_{aux}$.
     $$
 * An average Wasserstein 2 loss between Gaussian clouds from each density map,
     $$
-        L_{\mathcal{W}_2} =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
+        L_{\mathcal{W}_2}\left(Y,\hat{Y}\right) =\frac{1}{C}\sum_{k=1}^C\mathcal{W}_2\big( Y_k,\hat{Y}_k \big) + s\mathcal{P}(Y,\hat{Y})\,,\quad C=\min(||Y||_1,||\hat{Y}||_1)
     $$
 where $Y_k$ and $\hat{Y}_k$ denote the $k$-th Gaussian cloud (assumed these are ordered), $\mathcal{P}$ is a penalizing term that becomes effective when $||Y||_1\neq ||\hat{Y}||_1$ and $s$ is a scaler to increase or decrease the importance of $\mathcal{P}$.
 The combinations of $L_{count}$ and $L_{aux}$ we propose are   
@@ -33,8 +33,9 @@ The combinations of $L_{count}$ and $L_{aux}$ we propose are
     2. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}= L_{TV}$
     3. $L_{count}=L_{\mathcal{W}_2}$ and $L_{aux}=L_{counting}$
     4. $L_{count}=L_{counting}$ and $L_{aux}=L_{TV}$
+The desired loss can be set by opening ControlNetHome/models/cldm_v15_2.yaml and changing "control_eval".
 
-We trained 13k steps for 1 and 2. The dictionnaries are available at [INCLUDE LINK]. The models have not yet properly converged and further optimization must be done.
+We trained 13k steps for 1 and 2. The dictionnaries are available at https://drive.google.com/drive/folders/1soE-okkFyob9tePvirdpL986w8AiBU_N?usp=drive_link. The models have not yet properly converged and further optimization must be done.
 Implementation details can be found at [INCLUDE LINK].
 
 The initial code is from [[3]], found at https://github.com/lllyasviel/ControlNet. We list the modifications in 'modification.txt'.
@@ -88,12 +89,10 @@ pip3 install dict_recursive_update
 pip3 install yacs
 ```
 
-7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file. Rename the file as "nwpu_pre_trained.pth"
+7) For STEERER to work, you need to download the weights _"Ep_617_mae_32.5_mse_80.4"_ or _"JHU_mae_54.5_mse_40.6"_ from the git https://github.com/taohan10200/STEERER/tree/main. Our latest model uses the dictionnary of STEERER trained on the NWPU set, which is the former file. Rename the file as "nwpu_pre_trained.pth". The weights are also on the drive.
 
 ## Additional warnings/errors that might occur:
- If upon  initializing the model
- 
- (include graphic here), 
+ If upon  initializing the model, 
  
 1) the warning :
 _"Some weights of the model checkpoint at openai/clip-vit-large-patch14 were not used when initializing CLIPTextModel:..."_
@@ -139,7 +138,7 @@ model.load_state_dict(interm,strict = False)
 where the functions "create_model()", "load_state_dict()" are the same as in the ControlNet git with the sception that the STEERER dict are also loaded.
 
 ### Xformers package :
-An issue with trying the multi-GPU training is to initialize all models on the CPU and make sure no process is started i.e. no torch.cuda is called prior to launching `pl.fit()`. To solve this :
+An issue with trying multi-GPU training is to initialize all models on the CPU and make sure no process is started i.e. no torch.cuda is called prior to launching `pl.fit()`. To solve this :
 *  Restrict `CUDA_VISIBLE_DEVICES` to all unused GPU and exclude `Device:0` completely as the background processes are running constantly which results in at least one to be present when calling `torch.cuda.list_active_processes()`.
 * Comment out the xformers import and set `XFORMERS_IS_AVAILBLE = False` in the files _ControlNetHome/ldm/modules/attention.py_ and _ControlNetHome/ldm/modules/diffusionmodules/model.py_. This package is being used to import the object `memory_efficient_attention()` from xformer.ops but is not used in the Class ojects that are being imported from the above mentioned files. It is during the import of xformers.ops that `torch.cuda.is_initialized() = True`.
 
@@ -163,7 +162,7 @@ An issue with trying the multi-GPU training is to initialize all models on the C
 This is first loaded on the CPU. 
 
 ## Loading Data
-Before training the model, you will need to process your data. We used the NWPU set [[1]](#1) but any dataset will work if it is organised as such:
+Before training the model, you will need to process your data. We used the NWPU set [[1]] but any dataset will work if it is organised as such:
 
 ```markdown
 - **nwpu/**
@@ -209,7 +208,7 @@ python test.py method nb
 ```
 where method is the sampling method: 'ddim', 'count_guidance_ddpm', 'ddim_guidance'. 'count_guidance_ddpm' and 'ddim_guided' require a GPU with at least 20GB (due to gradient computation) while 'ddim' only requires 10GB. 'nb' is the number of samples to generate.
 
-We trained on a Nvidia L40 with 48GB with a batch-size of 2. The GPU was almost full capacity (~46GB). We recommend using a batch-size of 1 and increase 'accumulate_grad_batches'. To train run:
+We trained on a Nvidia L40 with 48GB with a batch-size of 2. The GPU was almost at full capacity (~46GB). We recommend using a batch-size of 1 and increase 'accumulate_grad_batches' if your GPU has less memory. To train run:
 ```bash
 python train.py
 ```
@@ -228,7 +227,7 @@ check_val_every_n_epoch = 4
 accumulation_steps = 10000                     # Standard steps for all our models. We think at least double this amount is necessary.
 ```
 
-Before running, you can enter which control loss you wish to train with. For this open the file ./ControlNetHome/models/cldm_v15_2.yaml and under "control_eval", you can set one of these: "w2-tv" #"mse"/ "w2-count" / "w2-tv" / "count-tv"
+Before running, you can enter which control loss you wish to train with. For this open the file ./ControlNetHome/models/cldm_v15_2.yaml and under "control_eval", you can set one of these: "w2-tv"/"mse"/"w2-count"/"w2-tv"/"count-tv"
 
 You can check the performance of the divergence losses on your dataset by running the following test :
 Go to `/project_root_dir/ControlNetHome/` and run 
@@ -238,7 +237,7 @@ Go to `/project_root_dir/ControlNetHome/` and run
 python -m tools.divergence_loss path_to_train device scale_bool
 ```
 
-where path_to_train is the path to the train/ folder containing map/,mean/,img/, device is the device to run this on (recommended to choose a GPU), scale: 1 or 0 if you wish to scale the W2-loss down to training values. The test return the maximum memory peak, time needed and largest error with a 0 density map, during a batch 2 forward and backward pass.
+where path_to_train is the path to the train/ folder containing map/,mean/,img/, device is the device to run this on (recommended to choose a GPU), scale: 1 or 0 if you wish to scale the W2-loss down to training values. The test returns the maximum memory peak, time needed and largest error with a 0 density map, during a batch 2 forward and backward pass.
 
 If you wish to train a version of STEERER with your already processed data, you can run this script which will copy the data and process it to the STEERER training format 
 

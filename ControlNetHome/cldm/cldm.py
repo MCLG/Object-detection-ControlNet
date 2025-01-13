@@ -711,6 +711,10 @@ class ControlLDM(LatentDiffusion):
             f.write(f"{self.global_step}, {min_grad:.6f}, {max_grad:.6f}, {av0_25:.6f}, {av25_50:.6f}, {av50_75:.6f}, {av75_100:.6f}\n")
 
     def compute_loss(self, x_start, cond, t, noise=None, mode='train', *args, **kwargs) :
+        '''
+            This function implements the ususal DM loss and if t<400 in the batch, will compute the control loss according to 
+            model.control_eval.
+        '''
 
         def time_scale(t,T=400, alpha=.1) :
             '''
@@ -721,7 +725,6 @@ class ControlLDM(LatentDiffusion):
             return alpha*(T-t)/T + 1.
 
         x_0 = x_start.clone()
-
 
         if noise is None :
             noise = default(noise, lambda: torch.randn_like(x_start))
@@ -907,18 +910,10 @@ class ControlLDM(LatentDiffusion):
         ) -> torch.Tensor :
         '''
         progress_track : savefilename as .csv file; will be saved in working dir.
+        Implements a step by step guidance using STEERER. This is slow and should be used for testing/plotting.
+        For sampling, use sample() with guided=True for DDIMSampler()  in ControlNetHome/ldm/models/diffusion/ddim.py instead
         '''
         self.register_schedule(timesteps=denoising_steps, set_device=self.device)
-
-        '''if ddim_discretize == 'uniform':
-            c = 1000 // denoising_steps
-            time_steps = np.asarray(list(range(0, 1000, c))) + 1
-        elif ddim_discretize == 'quad':
-            time_steps = ((np.linspace(0, np.sqrt(1000 * .8), denoising_steps)) ** 2).astype(int) + 1
-        else:
-            raise NotImplementedError(ddim_discretize)
-        '''
-
         timesteps = reversed([t for t in range(1,denoising_steps)])
         
         if isinstance(self.counter,STEERER_memory_alloc) :

@@ -136,27 +136,6 @@ def main():
 
     # Train! 
     trainer.fit(model, train_dataloaders=train_loader,val_dataloaders=val_loader)
-    #started : mse_tv 13181steps
-    # 1 run :  w2-count 600steps
-    # starting new at mse_tv 13181steps w/ loss w2-tv --> crashed at 13% epoch 0
-    # 26/1224 started new w2-tv with SD-dict
-    #27/2024 5ep 900steps --> works fine --> relaunched with better img logging
-    #stopped at ep1-200steps to check timestep issue
-    # trianing was seeded after first run of GMM. Need to start training again from 0
-    # crashed at 100steps --> relaunched from 100steps 27/12 (19h38) 
-    # same crash --> in DivergenceLoss non_z_componenets.shape[0] was sometime smaller than the number of centroids to construct which result in assert error in GMM.
-    #   This was due to loss of pixel information during dimension reduction.
-    #   relaunched at steps 200 27/12/2024 (23h34) --> total steps already 300steps
-    #crashed at ep11/1795steps (total_Steps=2095) -->relaunched with save 'epoch=11-step=1750.ckpt'
-    #
-    #
-    # FINISHED TRAINING :
-    # total_steps =12095 --> starting training from those steps 
-    # crashed at 100steps
-    # crashed again at 100steps --> relaunchd (total=12295)
-    # +1 12395
-    # crashed at ep7-1200steps --> total = 12395+1200 = 13595
-    # relaunched
-    # crashed at 50steps -> relaunched -> total steps = 13645
+    
 if __name__ == '__main__':
     main()
